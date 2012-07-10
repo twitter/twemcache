@@ -1,4 +1,4 @@
 language: java
+script: CFLAGS="-ggdb3 -O0" autoreconf -fvi && ./configure --enable-debug=full && make && sudo make install
 before_install:
  - sudo apt-get install libevent-dev libevent
-script: CFLAGS="-ggdb3 -O0" autoreconf -fvi && ./configure --enable-debug=full && make && sudo make install
