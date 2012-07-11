@@ -487,9 +487,6 @@ conn_add_iov(struct conn *c, const void *buf, int len)
             if (status != MC_OK) {
                 return status;
             }
-
-            ASSERT(c->msg_used >= 1);
-            m = &c->msg[c->msg_used - 1];
         }
 
         status = conn_ensure_iov_space(c);
