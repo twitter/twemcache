@@ -4,13 +4,16 @@ twctop is a tool that presents realtime cache stats in a intuitive way. Differen
 ## How to use twctop.rb
 
 To monitor a cluster:
-$ twctop.rb [options] </path/to/yaml>
+
+    $ twctop.rb [options] </path/to/yaml>
+
 or to monitor a single instance:
-$ twctop.rb [options] <-H hostname:port>
+
+    $ twctop.rb [options] <-H hostname:port>
 
 ## Most Useful Options
 
-* -s, --sleep <num-of-sec>: 'watch'-style endless refreshing. After the initial stats query, ongoing rates since the last refreshing are shown when applicable, rather than the absolutes since server start. A reasonable value for most pools in a low latency environment is 2.
+* -s, --sleep <num-of-sec>: 'watch'-style endless refreshing. After the initial stats query, ongoing rates since the last stats query are shown when applicable, rather than the absolutes since server start. A reasonable value for most pools in a low latency environment is 2.
 * -v, --view [slab|host|command]: Choose from one of the three views to start. Content shown in each view is explained below. After launch, one can still switch views by pressing the initial letter of each view.
 * -h, --help: full help message
 
