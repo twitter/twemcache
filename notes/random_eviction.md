@@ -2,18 +2,18 @@
 
 Random eviction enables twemcache to gracefully move on-the-fly from one slab size to another for an application's workload. The candidate slab is chosen randomly, on-demand from all the active slabs. Since, we maintain an append-only slabtable for every allocated slab in twemcache, this choice itself is O(1). Evicting a slab would require us to evict all the items in the slab which is O(items_per_slab).
 
-The adaptability of twemcache with random eviction can easily be seen in the experiment below. In this experiment, we spawn a cache server with a maximum memory capacity of 64MB and subject it to a series of test runs. In each test run, we generate a 'set' request load of 100MB. Since we are generating a load that exceeds the memory capacity of the cache, eviction would be triggered in every test run. Furthermore, we ensure that every test run generates requests that differ significantly in size in comparison to it's previous test run, which would ensure that requests in a given run get mapped to a different, unseen slabclass.
+The adaptability of twemcache with random eviction can easily be seen in the experiment below. In this experiment, we spawn a cache server with a maximum memory capacity of 64MB and subject it to a series of test runs. By default, every slab is of size 1MB and hence a cache instance with a memory capacity of 64MB would allocate at most 64 slabs. In each test run, we generate a 'set' request load of 100MB and record the slab distribution across different slab classes. Since we are generating a load that exceeds the memory capacity of the cache, eviction would be triggered in every test run. Furthermore, we ensure that every test run generates requests that differ significantly in size in comparison to it's previous test run, which would ensure that requests in a given run get mapped to a different, unseen slab class.
 
 Test runs:
 
-1. 10K requests of size 100 bytes generated over 100 connections.
-2. 1K requests of size 1K bytes generated over 100 connections.
-3. 100 requests of size 10K bytes generated over 100 connections.
-4. 10 requests of size 100K bytes generated over 100 connections.
+1. 10K requests of size *100 bytes* generated over 100 connections.
+2. 1K requests of size *1K bytes* generated over 100 connections.
+3. 100 requests of size *10K bytes* generated over 100 connections.
+4. 10 requests of size *100K bytes* generated over 100 connections.
 
-Results with the test runs:
+Results and slab distribution with the test runs:
 
-memcached v1.4.13:
+memcached v1.4.13 with slab_reassign,slab_automove:
 
     +---------------------------------------------------------+
     | size | calls |  slab  |  slab  | slab  | slab  | server |
@@ -28,7 +28,7 @@ memcached v1.4.13:
     | 100K |  10   |   64   |   1    |   1   |   1   |  883   |
     +---------------------------------------------------------+
 
-twemcache v2.4.0:
+twemcache v2.4.0 with --eviction-strategy=2:
 
     +---------------------------------------------------------+
     | size | calls |  slab  |  slab  | slab  | slab  | server |
