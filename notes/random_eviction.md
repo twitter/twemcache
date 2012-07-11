@@ -6,10 +6,10 @@ The adaptability of twemcache with random eviction can easily be seen in the exp
 
 Test runs:
 
-1. 10K requests of size *100 bytes* generated over 100 connections.
-2. 1K requests of size *1K bytes* generated over 100 connections.
-3. 100 requests of size *10K bytes* generated over 100 connections.
-4. 10 requests of size *100K bytes* generated over 100 connections.
+1. 10K requests of size **100 bytes** generated over 100 connections.
+2. 1K requests of size **1K bytes** generated over 100 connections.
+3. 100 requests of size **10K bytes** generated over 100 connections.
+4. 10 requests of size **100K bytes** generated over 100 connections.
 
 Results and slab distribution with the test runs:
 
