@@ -1516,7 +1516,6 @@ asc_append_stats(struct conn *c, const char *key, uint16_t klen,
     int remaining, room;
 
     pos = c->stats.buffer + c->stats.offset;
-    nbyte = 0;
     remaining = c->stats.size - c->stats.offset;
     room = remaining - 1;
 
