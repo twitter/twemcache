@@ -75,6 +75,7 @@ AC_CHECK_FUNCS([mlockall])
 AC_CHECK_FUNCS([getpagesizes])
 AC_CHECK_FUNCS([memcntl])
 AC_CHECK_FUNCS([backtrace])
+AC_CHECK_FUNCS([accept4], [AC_DEFINE(HAVE_ACCEPT4, 1, [Define to 1 if support accept4])])
 
 # Search for library
 AC_SEARCH_LIBS([pthread_create], [pthread], [],
