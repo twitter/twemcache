@@ -34,7 +34,7 @@ def runner_a():
 def runner_b():
     data = Data(PREFIX+DATAFILE2)
     mc = Client(data, freq=CMD_FREQ)
-    time.sleep(DURATION * len(data.buckets) * 1.5)
+    time.sleep(DURATION * len(data.buckets) * 2)
     for bucket in sorted(data.buckets):
         mc.setter_fixed_random(bucket, DURATION)
 
