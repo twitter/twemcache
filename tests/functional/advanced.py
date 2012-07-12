@@ -16,7 +16,6 @@ try:
     import unittest2 as unittest
 except ImportError:
     import unittest
-from multiprocessing import Process, Pipe
 
 # handling server and data configurations
 from config.defaults import *
@@ -51,8 +50,8 @@ class FunctionalAdvanced(unittest.TestCase):
         if self.server:
             stopServer(self.server)
 
-    def test_lru(self):
-        ''' test lru algorithm '''
+    def test_itemlru(self):
+        ''' test item lru algorithm '''
         args = Args(command='MAX_MEMORY = 8\nEVICTION = 1\nTHREADS = 1') #lru eviction
         size = SLAB_SIZE - ITEM_OVERHEAD - SLAB_OVERHEAD - 32 # ITEM_OVERHEAD
         data = '0' * size
@@ -68,6 +67,21 @@ class FunctionalAdvanced(unittest.TestCase):
             self.assertIsNone(self.mc.get("big%d" % i))
         for i in range(evictions, 10):
             self.assertEqual(str(i) * size, self.mc.get("big%d" % i))
+
+    def test_slablru(self):
+        ''' test slab lru algorithm '''
+        args = Args(command='MAX_MEMORY = 8\nEVICTION = 4\nTHREADS = 1') #lru eviction
+        sizes = [10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240]
+        self.server = startServer(args)
+        for i in range(8):
+            data = '0' * sizes[i]
+            self.assertTrue(self.mc.set(str(i), data))
+        self.assertEqual("0", self.mc.get_stats()[0][1]['slab_evict'])
+        for i in range(8, 11):
+            data = '0' * sizes[i]
+            self.assertTrue(self.mc.set(str(i), data))
+            self.assertIsNone(self.mc.get(str(i-8)))
+            self.assertEqual(str(i-7), self.mc.get_stats()[0][1]['slab_evict'])
 
 
 if __name__ == '__main__':
