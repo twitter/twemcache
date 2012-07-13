@@ -71,7 +71,7 @@ class FunctionalAdvanced(unittest.TestCase):
     def test_slablru(self):
         ''' test slab lru algorithm '''
         args = Args(command='MAX_MEMORY = 8\nEVICTION = 4\nTHREADS = 1') #lru eviction
-        sizes = [10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240]
+        sizes = [10, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480]
         self.server = startServer(args)
         for i in range(8):
             data = '0' * sizes[i]

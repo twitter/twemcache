@@ -214,7 +214,7 @@ slab_heapinfo_init(void)
         if (heapinfo.base == NULL) {
             log_error("pre-alloc %zu bytes for %"PRIu32" slabs failed: %s",
                       heapinfo.max_nslab * settings.slab_size,
-                      heapinfo.max_nslab);
+                      heapinfo.max_nslab, strerror(errno));
             return MC_ENOMEM;
         }
 
@@ -470,19 +470,20 @@ slab_evict_lru(int id)
     struct slab *slab;
     uint32_t tries;
 
-    tries = SLAB_LRU_MAX_TRIES;
-    slab = slab_lruq_head();
-    while (tries > 0 && slab != NULL && slab->refcount != 0) {
-        slab = TAILQ_NEXT(slab, s_tqe);
-        tries--;
+
+    for (tries = SLAB_LRU_MAX_TRIES, slab = slab_lruq_head();
+         tries > 0 && slab != NULL;
+         tries--, slab = TAILQ_NEXT(slab, s_tqe)) {
+        if (slab->refcount == 0) {
+            break;
+        }
     }
 
     if (tries == 0 || slab == NULL) {
         return NULL;
     }
 
-    log_debug(LOG_DEBUG, "lru-evicting slab %p with id %u",
-              slab, slab->id);
+    log_debug(LOG_DEBUG, "lru-evicting slab %p with id %u", slab, slab->id);
 
     slab_evict_one(slab);
 
