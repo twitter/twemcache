@@ -167,6 +167,8 @@ item_link_q(struct item *it)
     it->atime = time_now();
     TAILQ_INSERT_TAIL(&item_lruq[id], it, i_tqe);
 
+    slab_update_lruq(item_2_slab(it));
+
     stats_slab_incr(id, item_curr);
     stats_slab_incr_by(id, data_curr, item_ntotal(it));
     stats_slab_incr_by(id, data_value_curr, it->nbyte);
@@ -330,7 +332,6 @@ _item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte)
     char suffix[ITEM_MAX_SUFFIX_LEN];
     size_t ntotal;
     uint8_t id;
-    bool evict_slab;
 
     ntotal = item_make_header(nkey + 1, flags, nbyte, suffix, &nsuffix);
     if (settings.use_cas) {
@@ -346,8 +347,8 @@ _item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte)
      * We try to obtain an item in the following order:
      *  1)  by acquiring an expired item;
      *  2)  by getting a free slot from the last slab in current class;
-     *  3a) by evicting the lru item (if set in option), or
-     *  3b) by evicting a random slab (if set in option).
+     *  3)  by evicting a slab, if slab eviction(s) are enabled;
+     *  4)  by evicting an item, if item lru eviction is enabled.
      */
     it = item_get_from_lruq(id); /* expired / unexpired lru item */
 
@@ -361,9 +362,8 @@ _item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte)
     }
 
     uit = (settings.evict_opt & EVICT_LRU)? it : NULL; /* keep if can be used */
-    evict_slab = settings.evict_opt & EVICT_RS;
 
-    it = slab_get_item(id, evict_slab);
+    it = slab_get_item(id);
     if (it != NULL) {
         /* 2) or 3a) either we allow random eviction a free item is found */
         goto done;

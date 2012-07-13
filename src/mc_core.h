@@ -178,10 +178,11 @@ struct slabclass;
 
 #define HOSTNAME_SIZE 256 /* hostname length, we follow the UNIX convention */
 
-#define EVICT_NONE    0x0 /* throw OOM, no eviction */
-#define EVICT_LRU     0x1 /* per-slab lru eviction */
-#define EVICT_RS      0x2 /* random slab eviction */
-#define EVICT_INVALID 0x3 /* go no further! */
+#define EVICT_NONE    0x00 /* throw OOM, no eviction */
+#define EVICT_LRU     0x01 /* per-slab lru eviction */
+#define EVICT_RS      0x02 /* random slab eviction */
+#define EVICT_LS      0x04 /* lru slab eviction */
+#define EVICT_INVALID 0x08 /* go no further! */
 
 #define DEFINE_ACTION(_type, _min, _max, _nmin, _nmax) REQ_##_type,
 typedef enum req_type {
@@ -240,7 +241,7 @@ struct settings {
     char            *socketpath;                  /* network : path to unix socket if used */
     int             access;                       /* network : access mask for unix socket */
 
-    int             evict_opt;                    /* memory  : eviction: 0:off | 1:random_slab | 2:lru */
+    int             evict_opt;                    /* memory  : eviction */
     double          factor;                       /* memory  : chunk size growth factor */
     size_t          maxbytes;                     /* memory  : maximum bytes allowed for slabs */
     size_t          chunk_size;                   /* memory  : minimum item chunk size */
