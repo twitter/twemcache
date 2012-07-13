@@ -53,7 +53,7 @@ class FunctionalAdvanced(unittest.TestCase):
     def test_itemlru(self):
         ''' test item lru algorithm '''
         args = Args(command='MAX_MEMORY = 8\nEVICTION = 1\nTHREADS = 1') #lru eviction
-        size = SLAB_SIZE - ITEM_OVERHEAD - SLAB_OVERHEAD - 32 # ITEM_OVERHEAD
+        size = SLAB_SIZE - ITEM_OVERHEAD - SLAB_OVERHEAD - SUFFIX_CAS_LEN - len("big0")
         data = '0' * size
         self.server = startServer(args)
         self.assertTrue(self.mc.set("big0", data))

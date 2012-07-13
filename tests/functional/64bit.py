@@ -88,7 +88,7 @@ class Functional64bit(unittest.TestCase):
         self.assertEqual(0, active)
         # stuff twemcache till it runs out of memory
         key = 0
-        size = int(statsettings[0][1]['slab_size']) - ITEM_OVERHEAD - SLAB_OVERHEAD - 80
+        size = int(statsettings[0][1]['slab_size']) - ITEM_OVERHEAD - SLAB_OVERHEAD - SUFFIX_CAS_LEN - len(str(key))
         while self.mc.set(str(key), 'a' * size):
             self.assertIsNotNone(self.mc.get(str(key)))
             key += 1

@@ -57,7 +57,7 @@ cache_create(const char *name, size_t bufsize, size_t align)
 
     ret = calloc(1, sizeof(cache_t));
     name_ = malloc(strlen(name) + 1);
-    strcpy(name_, name);
+    strncpy(name_, name, strlen(name) + 1);
     ptr = calloc(initial_pool_size, bufsize);
 
     if (ret == NULL || name_ == NULL || ptr == NULL ||
