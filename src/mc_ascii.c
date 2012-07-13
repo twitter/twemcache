@@ -735,13 +735,14 @@ asc_process_update(struct conn *c, struct token *token, int ntoken)
         }
     }
 
-    vlen += CRLF_LEN;
-    if (vlen < 0 || (vlen - CRLF_LEN) < 0) {
+    if (vlen < 0) {
         log_debug(LOG_INFO, "client error on c %d for req of type %d and "
                   "invalid vlen %d", c->sd, c->req_type, vlen);
         asc_write_client_error(c);
         return;
     }
+
+    vlen += CRLF_LEN;
 
     it = item_alloc(key, nkey, flags, time_reltime(exptime), vlen);
     if (it == NULL) {
