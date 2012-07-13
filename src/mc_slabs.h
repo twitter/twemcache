@@ -49,20 +49,25 @@
  *   \               |
  *   slab            \
  *                   slab->data
+ *
+ * Note: keep struct slab 8-byte aligned so that item chunks always start on
+ *       8-byte aligned boundary.
  */
 struct slab {
     uint32_t          magic;    /* slab magic (const) */
     uint8_t           id;       /* slabclass id */
     uint8_t           unused;   /* unused */
     uint16_t          refcount; /* # concurrent users */
-    TAILQ_ENTRY(slab) s_tqe;    /* link in slabclass */
+    TAILQ_ENTRY(slab) s_tqe;    /* link in slab lruq */
+    rel_time_t        utime;    /* last update time in secs */
+    uint32_t          padding;  /* unused */
     uint8_t           data[1];  /* opaque data */
 };
 
 TAILQ_HEAD(slab_tqh, slab);
 
 #define SLAB_MAGIC      0xdeadbeef
-#define SLAB_HDR_SIZE   MC_ALIGN(offsetof(struct slab, data), MC_ALIGNMENT)
+#define SLAB_HDR_SIZE   offsetof(struct slab, data)
 #define SLAB_MIN_SIZE   ((size_t) 512)
 #define SLAB_MAX_SIZE   ((size_t) (128 * MB))
 #define SLAB_SIZE       MB
@@ -73,7 +78,7 @@ TAILQ_HEAD(slab_tqh, slab);
  * unique unsigned 8-bit id, which also identifies its owner slabclass
  *
  * Slabs that belong to a given class are reachable through slabq. Slabs
- * across all classes are reachable through the slabtable
+ * across all classes are reachable through the slabtable and slab lruq.
  *
  * We use free_item as a marker for the next available, unallocated item
  * in the current slab. Items that are available for reuse (i.e. allocated
@@ -89,22 +94,26 @@ TAILQ_HEAD(slab_tqh, slab);
  *  |             |
  *  |             |
  *  |             |
- *  +-------------+                   +----------------------------------------+
- *  |             |                   |                                        |
- *  |             |     +-------------v-+-------------------+    +-------------v-+-------------------+
- *  |             |     |               |                   |    |               |                   |
- *  |   class 1   |+--->|  slab header  |     slab data     |    |  slab header  |     slab data     |
- *  |             |     |               |                   |    |               |                   |--+
- *  |             |     +---------------+-------------------+    +---------------+-------------------+  |
- *  |             |                                                                                     //
  *  +-------------+
- *  |             |
- *  |             |     +---------------+-------------------+
+ *  |             |  ----------------------------------------------------------+
+ *  |             | /                                              (last slab) |
+ *  |             |/    +---------------+-------------------+    +-------------v-+-------------------+
+ *  |             |     |               |                   |    |               |                   |
+ *  |   class 1   |     |  slab header  |     slab data     |    |  slab header  |     slab data     |
+ *  |             |     |               |                   |    |               |                   |--+
+ *  |             |\    +---------------+-------------------+    +---------------+-------------------+  |
+ *  |             | \                                                                                   //
+ *  |             |  ----> (freeq)
+ *  +-------------+
+ *  |             |  -----------------+
+ *  |             | /     (last slab) |
+ *  |             |/    +-------------v-+-------------------+
  *  |             |     |               |                   |
- *  |   class 2   |+--->|  slab header  |     slab data     |
+ *  |   class 2   |     |  slab header  |     slab data     |
  *  |             |     |               |                   |--+
- *  |             |     +---------------+-------------------+  |
- *  |             |                                            //
+ *  |             |\    +---------------+-------------------+  |
+ *  |             | \                                          //
+ *  |             |  ----> (freeq)
  *  +-------------+
  *  |             |
  *  |             |
@@ -124,9 +133,6 @@ struct slabclass {
 
     uint32_t        nfree_itemq; /* # free item q */
     struct item_tqh free_itemq;  /* free item q */
-
-    uint32_t        nslabq;      /* # slab q */
-    struct slab_tqh slabq;       /* slab q */
 
     uint32_t        nfree_item;  /* # free item (in current slab) */
     struct item     *free_item;  /* next free item (in current slab) */
@@ -153,7 +159,8 @@ uint8_t slab_id(size_t size);
 rstatus_t slab_init(void);
 void slab_deinit(void);
 
-struct item *slab_get_item(uint8_t id, bool evict);
+struct item *slab_get_item(uint8_t id);
 void slab_put_item(struct item *it);
+void slab_update_lruq(struct slab *slab);
 
 #endif
