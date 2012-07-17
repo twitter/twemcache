@@ -1,0 +1,12 @@
+**Note:** To avoid any confusion, in this article, "Memcached Protocol" means the protocol adopted by all versions of Memcached regardless of implementation details; when unspecified, "Memcached" means both the original implementation ("mainline Memcached") as well as Twemcache; Twemcache-specific features are referred to as "Twemcache".
+
+## Background
+Part of the Memcached Protocol design philosophy is to keep things simple. The protocol is an in-memory key-value store interface, and not much more than that. The strength of the software is its high performance and predictable latency under most conditions.
+
+## Slab Allocation
+When it comes to memory management, the preference toward predictable performance leads to the decision of using a single memory allocation unit, called a _slab_. To still use memory relatively effectively, a slab-class structure is also adopted, so that a slab can be evenly sliced up into smaller _slots_; the size of each slot is determined by the slab class a slab belongs to. Garbage collection was entirely left out of the picture in the early days of Memcached, probably due to latency concerns; instead, a slot can be reused if users want to store an item of similar size. And even as the latest mainline Memcached and Twemcache provide the capabilities of moving slabs around in their own ways, both make no effort to preserve the items within the chosen slab (eviction candidate), and neither ever returns memory to the OS.
+
+### Common Misunderstandings
+There are two common misunderstandings about memory management in Memcached: 1. people sometimes think it works like the buddy memory allocation, in which a larger memory chunk can be broken down into smaller ones when smaller ones are not available. This is not true. Once a slab is allocated and sliced up in a particular way, only items matching that slab class perfectly can be stored in it. No bigger items can go in, which is obvious; but items matching a lower slab class cannot go in either, which comes as a surprise to many. 2. people sometimes also think that by deleting items, they give memory back to the heap/OS, which can subsequently be re-allocated in the form of a new slab. This is not true either for the reason we mentioned earlier- Memcached never frees up a slab even when there is not an active item in it.
+
+So the take-away message here is that Memcached only evicts data but never frees memory. And slab calcification under a dynamic size distribution is unavoidable unless slabs can be reassigned.
