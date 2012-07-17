@@ -99,8 +99,11 @@ Memory in twemcache is organized into fixed sized slabs whose size is configured
 Eviction is triggered when a cache reaches full memory capacity. This happens when all cached items are unexpired and there is no space available to store newer items. Twemcache supports the following eviction strategies, configured using the -M or --eviction-strategy=N command-line argument:
 
 * No eviction (0) - don't evict, respond with server error reply.
-* LRU eviction (1) - evict only existing items in the same slab class; essentially a per-slabclass LRU eviction.
+* Item LRU eviction (1) - evict only existing items in the same slab class, least recently updated first; essentially a per-slabclass LRU eviction.
 * Random eviction (2) - evict all items from a randomly chosen slab.
+* Slab LRU eviction (4) - choose the least recently updated slab, and evict all items from it to reuse the slab.
+
+Eviction strategies can be *stacked*, in the order of higher to lower bit. For example, `-M 5` means that if slab LRU eviciton fails, Twemcache will try item LRU eviction.
 
 ## Observability
 
