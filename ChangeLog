@@ -1,4 +1,9 @@
 2012-07-10  Cache Team <cache-team@twitter.com>
+	* twemcache: version 2.5.0 release
+	  Feature: slab LRU eviction (-M 4) introduced
+	           multiple eviction strategies can now be stacked
+
+2012-07-10  Cache Team <cache-team@twitter.com>
 
 	* twemcache: version 2.4.0 release
 	  twemcache is the twitter memcached
