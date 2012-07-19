@@ -60,15 +60,25 @@ class Functional64bit(unittest.TestCase):
         '''64bit specific test.'''
         # check memory to see how much free memory we have
         # otherwise the test will fail if we run out of free memory
-        memstr = subprocess.Popen(['cat','/proc/meminfo'],
-                                  stdout=subprocess.PIPE).communicate()[0]
-        meminfo = {}
-        for line in memstr.split('\n'):
-            if line:
-                name, value = line.split(':')
-                meminfo[name] = value.strip()
         global memFree
-        memFree = int(meminfo['MemFree'].rstrip(' kB')) / 1024
+        if sys.platform.startswith('darwin'):
+            memstr = subprocess.Popen(['sysctl','-a'],
+                                      stdout=subprocess.PIPE).communicate()[0]
+            meminfo = {}
+            for line in memstr.split('\n'):
+                if line and (line.startswith('hw.pagesize:') or line.startswith('vm.page_free_count:')):
+                    name, value = line.split(':')
+                    meminfo[name] = value.strip()
+            memFree = int(meminfo['vm.page_free_count']) * int(meminfo['hw.pagesize'])
+        else:
+            memstr = subprocess.Popen(['cat','/proc/meminfo'],
+                                      stdout=subprocess.PIPE).communicate()[0]
+            meminfo = {}
+            for line in memstr.split('\n'):
+                if line:
+                    name, value = line.split(':')
+                    meminfo[name] = value.strip()
+            memFree = int(meminfo['MemFree'].rstrip(' kB')) / 1024
         args = Args(command='MAX_MEMORY = %d\nEVICTION = 0' % memAlloc)
         self.server = startServer(args)
         self.assertIsNotNone(self.server)
