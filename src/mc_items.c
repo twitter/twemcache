@@ -150,9 +150,14 @@ item_hdr_init(struct item *it, uint32_t offset, uint8_t id)
  * Lru q is sorted in ascending time order - oldest to most recent. So
  * enqueuing at item to the tail of the lru q requires us to update its
  * last access time atime.
+ *
+ * The allocated flag indicates whether the item being re-linked is a newly
+ * allocated or not. This is useful for updating the slab lruq, which can
+ * choose to update only when a new item has been allocated (write-only) or
+ * the opposite (read-only), or on both occasions (access-based).
  */
 static void
-item_link_q(struct item *it)
+item_link_q(struct item *it, bool allocated)
 {
     uint8_t id = it->id;
 
@@ -167,10 +172,10 @@ item_link_q(struct item *it)
     it->atime = time_now();
     TAILQ_INSERT_TAIL(&item_lruq[id], it, i_tqe);
 
-    slab_update_lruq(item_2_slab(it));
+    slab_lruq_touch(item_2_slab(it), allocated);
 
     stats_slab_incr(id, item_curr);
-    stats_slab_incr_by(id, data_curr, item_ntotal(it));
+    stats_slab_incr_by(id, data_curr, item_size(it));
     stats_slab_incr_by(id, data_value_curr, it->nbyte);
 }
 
@@ -192,7 +197,7 @@ item_unlink_q(struct item *it)
     TAILQ_REMOVE(&item_lruq[id], it, i_tqe);
 
     stats_slab_decr(id, item_curr);
-    stats_slab_decr_by(id, data_curr, item_ntotal(it));
+    stats_slab_decr_by(id, data_curr, item_size(it));
     stats_slab_decr_by(id, data_value_curr, it->nbyte);
 }
 
@@ -226,52 +231,6 @@ item_reuse(struct item *it)
 }
 
 /*
- * Make item suffix - " flags nbyte\r\n". Returns the suffix and length
- * of the suffix generated
- */
-static uint8_t
-item_make_suffix(int flags, int nbyte, char *suffix)
-{
-    uint8_t sz;
-
-    sz = snprintf(suffix, ITEM_MAX_SUFFIX_LEN, " %d %d\r\n", flags, nbyte - 2);
-    ASSERT(sz < ITEM_MAX_SUFFIX_LEN); /* or we have a corrupted item */
-
-    return sz;
-}
-
-/*
- * Returns the length of variable-sized part of the item header. This
- * includes -
- *  - item header size
- *  - key length, including '\0'
- *  - suffix length
- *  - data
- */
-static size_t
-item_make_header(uint8_t nkey, int flags, int nbyte, char *suffix,
-                 uint8_t *nsuffix)
-{
-    *nsuffix = item_make_suffix(flags, nbyte, suffix);
-    return ITEM_HDR_SIZE + nkey + *nsuffix + nbyte;
-}
-
-/*
- * Returns true if an item will fit in the cache i.e its size does not
- * exceed the maximum for a cache entry
- */
-bool
-item_size_ok(size_t nkey, int flags, int nbyte)
-{
-    char prefix[40];
-    uint8_t id, nsuffix;
-
-    id = slab_id(item_make_header(nkey + 1, flags, nbyte, prefix, &nsuffix));
-
-    return (id != SLABCLASS_INVALID_ID) ? true : false;
-}
-
-/*
  * Find an unused (unreferenced) item from lru q.
  *
  * First try to find an expired item from the lru Q of item's slab
@@ -287,6 +246,10 @@ item_get_from_lruq(uint8_t id)
     struct item *it;  /* expired item */
     struct item *uit; /* unexpired item */
     uint32_t tries;
+
+    if (!settings.use_lruq) {
+        return NULL;
+    }
 
     for (tries = ITEM_LRUQ_MAX_TRIES, it = TAILQ_FIRST(&item_lruq[id]),
          uit = NULL;
@@ -313,6 +276,23 @@ item_get_from_lruq(uint8_t id)
     return uit;
 }
 
+uint8_t item_slabid(uint8_t nkey, uint32_t nbyte)
+{
+    size_t ntotal;
+    uint8_t id;
+
+    ntotal = item_ntotal(nkey, nbyte, settings.use_cas);
+
+    id = slab_id(ntotal);
+    if (id == SLABCLASS_INVALID_ID) {
+        log_debug(LOG_NOTICE, "slab class id out of range with %"PRIu8" bytes "
+                  "key, %"PRIu32" bytes value and %zu item chunk size", nkey,
+                  nbyte, ntotal);
+    }
+
+    return id;
+}
+
 /*
  * Allocate an item. We allocate an item either by -
  *  1. Reusing an expired item from the lru Q of an item's slab class. Or,
@@ -324,24 +304,13 @@ item_get_from_lruq(uint8_t id)
  * into the hash + lru q or freed.
  */
 static struct item *
-_item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte)
+_item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t
+            exptime, uint32_t nbyte)
 {
-    uint8_t nsuffix;
     struct item *it;  /* item */
     struct item *uit; /* unexpired lru item */
-    char suffix[ITEM_MAX_SUFFIX_LEN];
-    size_t ntotal;
-    uint8_t id;
 
-    ntotal = item_make_header(nkey + 1, flags, nbyte, suffix, &nsuffix);
-    if (settings.use_cas) {
-        ntotal += sizeof(uint64_t);
-    }
-
-    id = slab_id(ntotal);
-    if (id == SLABCLASS_INVALID_ID) {
-        return NULL;
-    }
+    ASSERT(id >= SLABCLASS_MIN_ID && id <= SLABCLASS_MAX_ID);
 
     /*
      * We try to obtain an item in the following order:
@@ -379,6 +348,10 @@ _item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte)
         goto done;
     }
 
+    log_warn("server error on allocating item in slab %"PRIu8, id);
+
+    stats_thread_incr(server_error);
+
     return NULL;
 
 done:
@@ -391,12 +364,11 @@ done:
     item_acquire_refcount(it);
 
     it->flags = settings.use_cas ? ITEM_CAS : 0;
+    it->dataflags = dataflags;
     it->nbyte = nbyte;
     it->exptime = exptime;
     it->nkey = nkey;
     memcpy(item_key(it), key, nkey);
-    it->nsuffix = nsuffix;
-    memcpy(item_suffix(it), suffix, (size_t)nsuffix);
 
     stats_slab_incr(id, item_acquire);
 
@@ -408,12 +380,13 @@ done:
 }
 
 struct item *
-item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte)
+item_alloc(uint8_t id, char *key, size_t nkey, uint32_t flags,
+           rel_time_t exptime, uint32_t nbyte)
 {
     struct item *it;
 
     pthread_mutex_lock(&cache_lock);
-    it = _item_alloc(key, nkey, flags, exptime, nbyte);
+    it = _item_alloc(id, key, nkey, flags, exptime, nbyte);
     pthread_mutex_unlock(&cache_lock);
 
     return it;
@@ -443,15 +416,7 @@ _item_link(struct item *it)
     item_set_cas(it, item_next_cas());
 
     assoc_insert(it);
-    item_link_q(it);
-}
-
-void
-item_link(struct item *it)
-{
-    pthread_mutex_lock(&cache_lock);
-    _item_link(it);
-    pthread_mutex_unlock(&cache_lock);
+    item_link_q(it, true);
 }
 
 /*
@@ -479,14 +444,6 @@ _item_unlink(struct item *it)
             item_free(it);
         }
     }
-}
-
-void
-item_unlink(struct item *it)
-{
-    pthread_mutex_lock(&cache_lock);
-    _item_unlink(it);
-    pthread_mutex_unlock(&cache_lock);
 }
 
 /*
@@ -521,11 +478,23 @@ item_remove(struct item *it)
 }
 
 /*
- * Update the item by moving it to the tail of lru q only if it wasn't
- * updated ITEM_UPDATE_INTERVAL secs back.
+ * Unlink an item and remove it (if its recount drops to zero).
+ */
+void
+item_delete(struct item *it)
+{
+    pthread_mutex_lock(&cache_lock);
+    _item_unlink(it);
+    _item_remove(it);
+    pthread_mutex_unlock(&cache_lock);
+}
+
+/*
+ * Touch the item by moving it to the tail of lru q only if it wasn't
+ * touched ITEM_UPDATE_INTERVAL secs back.
  */
 static void
-_item_update(struct item *it)
+_item_touch(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
     ASSERT((it->flags & ITEM_SLABBED) == 0);
@@ -541,19 +510,19 @@ _item_update(struct item *it)
     ASSERT((it->flags & ITEM_LINKED) != 0);
     if ((it->flags & ITEM_LINKED) != 0) {
         item_unlink_q(it);
-        item_link_q(it);
+        item_link_q(it, false);
     }
 }
 
 void
-item_update(struct item *it)
+item_touch(struct item *it)
 {
     if (it->atime >= (time_now() - ITEM_UPDATE_INTERVAL)) {
         return;
     }
 
     pthread_mutex_lock(&cache_lock);
-    _item_update(it);
+    _item_touch(it);
     pthread_mutex_unlock(&cache_lock);
 }
 
@@ -603,7 +572,7 @@ _item_cache_dump(uint8_t id, uint32_t limit, uint32_t *bytes)
         strncpy(key_temp, item_key(it), it->nkey);
         key_temp[it->nkey] = '\0'; /* terminate */
         len = snprintf(temp, sizeof(temp), "ITEM %s [%d b; %lu s]\r\n",
-                       key_temp, it->nbyte - CRLF_LEN,
+                       key_temp, it->nbyte,
                        (unsigned long)it->exptime + time_started());
         if (len >= sizeof(temp)) {
             log_debug(LOG_WARN, "item log was truncated during cache dump");
@@ -751,7 +720,8 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
     bool store_it;               /* store item ? */
     char *key;                   /* item key */
     struct item *oit, *nit;      /* old (existing) item & new item */
-    int flags;                   /* item flags */
+    uint8_t id;                  /* slab id */
+    uint32_t total_nbyte;
 
     result = NOT_STORED;
     store_it = true;
@@ -805,7 +775,7 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
              * Add only adds a non existing item. However we promote the
              * existing item to head of the lru q
              */
-            _item_update(oit);
+            _item_touch(oit);
             store_it = false;
             break;
 
@@ -818,15 +788,25 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
             stats_slab_incr(oit->id, append_hit);
 
             /*
-             * Alloc new item - nit to hold both it and oit. Note that at
-             * this point flags are already lost. So we recover them from
-             * item suffix
+             * Alloc new item - nit to hold both it and oit
              */
-            flags = (int) strtol(item_suffix(oit), (char **) NULL, 10);
-            nit = _item_alloc(key, it->nkey, flags, oit->exptime,
-                              it->nbyte + oit->nbyte - CRLF_LEN);
+            total_nbyte = oit->nbyte + it->nbyte;
+            id = item_slabid(oit->nkey, total_nbyte);
+            if (id == SLABCLASS_INVALID_ID) {
+                /* FIXME: logging client error but not sending CLIENT ERROR
+                 * to the client because we are inside the item module, which
+                 * technically shouldn't directly handle commands. There is not
+                 * a proper return status to indicate such an error.
+                 * This can only be fixed by moving the command-aware logic
+                 * into a separate module.
+                 */
+                log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
+                          " with key size %"PRIu8" and value size %"PRIu32,
+                          c->sd, c->req_type, oit->nkey, total_nbyte);
+            }
+            nit = _item_alloc(id, key, oit->nkey, oit->dataflags, oit->exptime,
+                              total_nbyte);
             if (nit == NULL) {
-                stats_thread_incr(server_error);
                 store_it = false;
                 break;
             }
@@ -834,13 +814,11 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
             stats_slab_incr(nit->id, append_success);
 
             /*
-             * Copy n bytes of data from it and oit to nit, where
-             *  - n = oit->nbyte + it->nbyte - CRLF_LEN and,
+             * Copy total_nbyte of data from it and oit to nit, where
              *  - append =  nit <- [oit, it]
              */
             memcpy(item_data(nit), item_data(oit), oit->nbyte);
-            memcpy(item_data(nit) + oit->nbyte - CRLF_LEN, item_data(it),
-                   it->nbyte);
+            memcpy(item_data(nit) + oit->nbyte, item_data(it), it->nbyte);
             it = nit;
 
             break;
@@ -849,29 +827,30 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
             stats_slab_incr(oit->id, prepend_hit);
 
             /*
-             * Alloc new item - nit to hold both it and oit. Note that at
-             * this point flags are already lost. So we recover them from
-             * item suffix
+             * Alloc new item - nit to hold both it and oit
              */
-            flags = (int) strtol(item_suffix(oit), (char **) NULL, 10);
-            nit = _item_alloc(key, it->nkey, flags, oit->exptime,
-                              it->nbyte + oit->nbyte - CRLF_LEN);
+            total_nbyte = oit->nbyte + it->nbyte;
+            id = item_slabid(oit->nkey, total_nbyte);
+            if (id == SLABCLASS_INVALID_ID) {
+                log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
+                          " with key size %"PRIu8" and value size %"PRIu32,
+                          c->sd, c->req_type, oit->nkey, total_nbyte);
+            }
+            nit = _item_alloc(id, key, oit->nkey, oit->dataflags, oit->exptime,
+                              total_nbyte);
             if (nit == NULL) {
-                stats_thread_incr(server_error);
                 store_it = false;
                 break;
             }
 
             stats_slab_incr(nit->id, prepend_success);
             /*
-             * Copy n bytes of data from it and oit to nit, where
-             *  - n = oit->nbyte + it->nbyte - CRLF_LEN and,
+             * Copy total_byte of data from it and oit to nit, where
              *  - prepend = nit <- [it, oit]
              */
 
             memcpy(item_data(nit), item_data(it), it->nbyte);
-            memcpy(item_data(nit) + it->nbyte - CRLF_LEN, item_data(oit),
-                   oit->nbyte);
+            memcpy(item_data(nit) + it->nbyte, item_data(oit), oit->nbyte);
             it = nit;
 
             break;
@@ -968,13 +947,20 @@ _item_add_delta(struct conn *c, char *key, size_t nkey, bool incr,
 
     res = snprintf(buf, INCR_MAX_STORAGE_LEN, "%"PRIu64, value);
     ASSERT(res < INCR_MAX_STORAGE_LEN);
-    if (res + CRLF_LEN > it->nbyte) { /* need to realloc */
+    if (res > it->nbyte) { /* need to realloc */
         struct item *new_it;
-        new_it = _item_alloc(item_key(it), it->nkey,
-                             atoi(item_suffix(it) + 1),
-                             it->exptime, res + CRLF_LEN);
-        if (new_it == 0) {
-            stats_thread_incr(server_error);
+        uint8_t id;
+
+        id = item_slabid(it->nkey, res);
+        if (id == SLABCLASS_INVALID_ID) {
+            log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
+            " with key size %"PRIu8" and value size %"PRIu32, c->sd,
+            c->req_type, it->nkey, res);
+        }
+
+        new_it = _item_alloc(id, item_key(it), it->nkey, it->dataflags,
+                             it->exptime, res);
+        if (new_it == NULL) {
             _item_remove(it);
             return DELTA_EOM;
         }
@@ -985,7 +971,6 @@ _item_add_delta(struct conn *c, char *key, size_t nkey, bool incr,
         }
 
         memcpy(item_data(new_it), buf, res);
-        memcpy(item_data(new_it) + res, CRLF, CRLF_LEN);
         _item_replace(it, new_it);
         _item_remove(new_it);
     } else {
@@ -1002,7 +987,7 @@ _item_add_delta(struct conn *c, char *key, size_t nkey, bool incr,
         item_set_cas(it, item_next_cas());
 
         memcpy(item_data(it), buf, res);
-        memset(item_data(it) + res, ' ', it->nbyte - res - CRLF_LEN);
+        memset(item_data(it) + res, ' ', it->nbyte - res);
     }
 
     _item_remove(it);

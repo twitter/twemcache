@@ -28,6 +28,7 @@
  */
 
 #include <unistd.h>
+#include <stdio.h>
 
 #include <mc_core.h>
 
@@ -42,8 +43,11 @@ extern struct thread_key keys;
 #define KLOG_GETS_FMT           "%s - [%s] \"gets %.*s\" %d %d\n"
 #define KLOG_FMT                "%s - [%s] \"%.*s\" %d %d\n"
 #define KLOG_DISCARD_MSG_SIZE   30
+#define KLOG_MAX_SIZE           GB
 
-static int fd; /* klogger file descriptor */
+
+static int fd;  /* klogger file descriptor */
+static int kfs; /* klogger file size */
 
 bool
 klog_enabled(void)
@@ -202,6 +206,44 @@ klog_deinit(void)
 }
 
 /*
+ * This is the poor man's version of log rotation- one backup file only,
+ * no compression. Yet it is much more responsive and precise in size control
+ * than logrotate, which is scheduled to run only once an hour.
+ *
+ * Close current klog file, rename it what is specified by settings.klog_backup
+ * and reopen the klog file.
+ */
+static void
+klog_reopen(void)
+{
+    int ret;
+
+    if (fd < 0) {
+        return;
+    }
+
+    ASSERT(settings.klog_name != NULL);
+    ASSERT(settings.klog_backup != NULL);
+
+    close(fd);
+
+    ret = rename(settings.klog_name, settings.klog_backup);
+    if (ret < 0) {
+        log_error("rename old klog file '%s' to '%s' failed, ignored: %s",
+                  settings.klog_name, settings.klog_backup,
+                  strerror(errno));
+    }
+
+    fd = open(settings.klog_name, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (fd < 0) {
+        log_error("reopen klog file '%s' failed, disabling klogger: %s",
+                  settings.klog_name, strerror(errno));
+
+        settings.klog_running = false;
+    }
+}
+
+/*
  * Reads remaining message from klog buffer and writes them to the
  * klogger output. On success updates read index - r_idx.
  *
@@ -261,6 +303,11 @@ klog_read(struct kbuf *kbuf)
         kbuf->r_idx = CIRCULAR_INCR(r_idx, ret, kbuf->size);
     }
 
+    kfs += ret;
+    if (kfs > KLOG_MAX_SIZE) {
+        klog_reopen();
+        kfs = 0;
+    }
     return ret;
 
 error:

@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include <mc_cache.h>
+#include <mc_core.h>
 
 const int initial_pool_size = 64;
 
@@ -52,23 +53,23 @@ cache_t *
 cache_create(const char *name, size_t bufsize, size_t align)
 {
     cache_t *ret;
-    char *name_;
+    char *name_new;
     void **ptr;
 
-    ret = calloc(1, sizeof(cache_t));
-    name_ = malloc(strlen(name) + 1);
-    strncpy(name_, name, strlen(name) + 1);
-    ptr = calloc(initial_pool_size, bufsize);
+    ret = mc_calloc(1, sizeof(cache_t));
+    name_new = mc_alloc(strlen(name) + 1);
+    ptr = mc_calloc(initial_pool_size, bufsize);
 
-    if (ret == NULL || name_ == NULL || ptr == NULL ||
+    if (ret == NULL || name_new == NULL || ptr == NULL ||
         pthread_mutex_init(&ret->mutex, NULL) == -1) {
-        free(ret);
-        free(name_);
-        free(ptr);
+        mc_free(ret);
+        mc_free(name_new);
+        mc_free(ptr);
         return NULL;
     }
 
-    ret->name = name_;
+    strncpy(name_new, name, strlen(name) + 1);
+    ret->name = name_new;
     ret->ptr = ptr;
     ret->freetotal = initial_pool_size;
 
@@ -92,10 +93,10 @@ cache_destroy(cache_t *cache)
 {
     while (cache->freecurr > 0) {
         void *ptr = cache->ptr[--cache->freecurr];
-        free(ptr);
+        mc_free(ptr);
     }
-    free(cache->name);
-    free(cache->ptr);
+    mc_free(cache->name);
+    mc_free(cache->ptr);
     pthread_mutex_destroy(&cache->mutex);
 }
 
@@ -115,7 +116,7 @@ cache_alloc(cache_t *cache)
     if (cache->freecurr > 0) {
         object = cache->ptr[--cache->freecurr];
     } else {
-        object = malloc(cache->bufsize);
+        object = mc_alloc(cache->bufsize);
     }
     pthread_mutex_unlock(&cache->mutex);
 
@@ -141,13 +142,13 @@ cache_free(cache_t *cache, void *ptr)
     } else {
         /* try to enlarge free connections array */
         size_t newtotal = cache->freetotal * 2;
-        void **new_free = realloc(cache->ptr, sizeof(char *) * newtotal);
-        if (new_free) {
+        void **new_free = mc_realloc(cache->ptr, sizeof(char *) * newtotal);
+        if (new_free != NULL) {
             cache->freetotal = newtotal;
             cache->ptr = new_free;
             cache->ptr[cache->freecurr++] = ptr;
         } else {
-            free(ptr);
+            mc_free(ptr);
 
         }
     }

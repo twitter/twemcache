@@ -35,6 +35,7 @@
 #define HASH_DEFAULT_MOVE_SIZE  1
 #define HASH_DEFAULT_POWER      16
 
+extern struct settings settings;
 extern pthread_mutex_t cache_lock;
 
 /*
@@ -47,9 +48,10 @@ extern pthread_mutex_t cache_lock;
 static struct item_slh *primary_hashtable;  /* primary (main) hash table */
 static struct item_slh *old_hashtable;      /* secondary (old) hash table */
 static uint32_t nhash_item;                 /* # items in hash table */
-static uint32_t nhash_move_size;            /* # hash buckets to move during expansion */
 static uint32_t hash_power;                 /* # buckets = 2^hash_power */
+
 static int expanding;                       /* expanding? */
+static uint32_t nhash_move_size;            /* # hash buckets to move during expansion */
 static uint32_t expand_bucket;              /* last expanded bucket */
 
 static pthread_cond_t maintenance_cond;     /* maintenance thread condvar */
@@ -170,9 +172,10 @@ assoc_init(void)
     uint32_t hashtable_sz;
 
     primary_hashtable = NULL;
+    hash_power = settings.hash_power > 0 ? settings.hash_power : HASH_DEFAULT_POWER;
+
     old_hashtable = NULL;
     nhash_move_size = HASH_DEFAULT_MOVE_SIZE;
-    hash_power = HASH_DEFAULT_POWER;
     nhash_item = 0;
     expanding = 0;
     expand_bucket = 0;
@@ -223,6 +226,13 @@ assoc_find(const char *key, size_t nkey)
     return it;
 }
 
+static bool
+assoc_expand_needed(void)
+{
+    return ((settings.hash_power == 0) && (expanding == 0) &&
+            (nhash_item > (HASHSIZE(hash_power) * 3 / 2)));
+}
+
 /*
  * Expand the hashtable to the next power of 2. On failure, continue using
  * the old hashtable
@@ -262,7 +272,7 @@ assoc_insert(struct item *it)
     SLIST_INSERT_HEAD(bucket, it, h_sle);
     nhash_item++;
 
-    if ((expanding == 0) && (nhash_item > (HASHSIZE(hash_power) * 3) / 2)) {
+    if (assoc_expand_needed()) {
         assoc_expand();
     }
 }

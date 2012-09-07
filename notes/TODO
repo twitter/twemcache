@@ -1,5 +1,6 @@
 * Add a cmd counter (counter for total # of commands) to stats
 * Reply strings like NOT_FOUND, EXISTS, etc should come from a #define table
+* separate command logic from item module, the latter should only care about create/destroy/link/replace.. items
 * Add stat to track the memory overhead of hash table and connection module
 * Refactor 'struct setting' to use the preprocessor and a #define table
 * Reintroduce the functionality of MEMCACHED_PORT_FILENAME

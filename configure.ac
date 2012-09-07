@@ -1,7 +1,7 @@
 # Define the package version numbers and the bug reporting address
 m4_define([MC_MAJOR], 2)
 m4_define([MC_MINOR], 5)
-m4_define([MC_PATCH], 0)
+m4_define([MC_PATCH], 1)
 m4_define([MC_BUGS], [cache-team@twitter.com])
 
 # Initialize autoconf
@@ -234,12 +234,16 @@ AS_IF(
 AC_MSG_CHECKING([whether to enable static linking])
 AC_ARG_ENABLE([static],
   [AS_HELP_STRING(
-    [--enable-static=@<:@libevent|no@:>@],
+    [--enable-static=@<:@yes|libevent|no@:>@],
     [enable static linking @<:@default=no@:>@])
   ],
   [],
   [enable_static=no])
 AS_CASE([x$enable_static],
+  [xyes], [
+            LDFLAGS="-static-libgcc -static $LDFLAGS"
+            LIBS="-levent $LIBS -lrt"
+          ],
   [xlibevent], [LIBS="-Wl,-Bstatic -levent -Wl,-Bdynamic $LIBS -lrt"],
   [xno], [LIBS="-levent $LIBS"],
   [AC_MSG_FAILURE([invalid value ${enable_static} for --enable-static])])

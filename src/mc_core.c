@@ -94,8 +94,9 @@ core_write_and_free(struct conn *c, char *buf, int bytes)
         conn_set_state(c, CONN_WRITE);
         c->write_and_go = CONN_NEW_CMD;
     } else {
-        log_debug(LOG_INFO, "server error on c %d for req of type %d because "
-                  "message buffer is NULL", c->sd, c->req_type);
+        log_warn("server error on c %d for req of type %d because message "
+                  "buffer is NULL", c->sd, c->req_type);
+
         asc_write_server_error(c);
     }
 }
@@ -136,7 +137,8 @@ core_read_udp(struct conn *c)
 
         /* if this is a multi-packet request, drop it */
         if (buf[4] != 0 || buf[5] != 1) {
-            log_debug(LOG_DEBUG, "server error: multipacket req not supported");
+            log_warn("server error: multipacket req not supported");
+
             asc_write_server_error(c);
             return READ_NO_DATA_RECEIVED;
         }
@@ -194,9 +196,8 @@ core_read_tcp(struct conn *c)
 
             new_rbuf = mc_realloc(c->rbuf, c->rsize * 2);
             if (new_rbuf == NULL) {
-                log_debug(LOG_DEBUG, "server error on c %d for req of type %d "
-                          "because of oom alloc buf for new req", c->sd,
-                          c->req_type);
+                log_warn("server error on c %d for req of type %d because of "
+                         "oom alloc buf for new req", c->sd, c->req_type);
 
                 c->rbytes = 0; /* ignore what we read */
                 asc_write_server_error(c);

@@ -62,28 +62,27 @@ typedef enum item_delta_result {
  * (ITEM_SLABBED). The flags ITEM_LINKED and ITEM_SLABBED are mutually
  * exclusive and when an item is unlinked it has neither of these flags
  *
- *   <-----------------------item size--------------------------->
- *   +---------------+-------------------------------------------+
- *   |               |                                           |
- *   |  item header  |              item data                    |
- *   | (struct item) |     ...      ...                          |
- *   +---------------+---+-----+-----------+---------------------+
- *   ^               ^   ^     ^           ^
- *   |               |   |     |           |
- *   |               |   |     |           \
- *   |               |   |     |           item_data()
- *   |               |   |     \
- *   |               |   |     item_suffix()
- *   |               |   \
- *   \               |   item_key()
+ *   <-----------------------item size------------------>
+ *   +---------------+----------------------------------+
+ *   |               |                                  |
+ *   |  item header  |          item payload            |
+ *   | (struct item) |         ...      ...             |
+ *   +---------------+-------+-------+------------------+
+ *   ^               ^       ^       ^
+ *   |               |       |       |
+ *   |               |       |       |
+ *   |               |       |       |
+ *   |               |       |       \
+ *   |               |       |       item_data()
+ *   |               |       \
+ *   \               |       item_key()
  *   item            \
- *                   item->end, item_cas()
+ *                   item->end, (if enabled) item_cas()
  *
  * item->end is followed by:
  * - 8-byte cas, if ITEM_CAS flag is set
- * - '\0' key of length = item->nkey + 1
- * - " flags length\r\n" with no terminating '\0'
- * - data terminated with CRLF
+ * - key with terminating '\0', length = item->nkey + 1
+ * - data with no terminating '\0'
  */
 struct item {
     uint32_t          magic;      /* item magic (const) */
@@ -93,8 +92,8 @@ struct item {
     rel_time_t        exptime;    /* expiry time in secs */
     uint32_t          nbyte;      /* date size */
     uint32_t          offset;     /* offset of item in slab */
+    uint32_t          dataflags;  /* data flags opaque to the server */
     uint16_t          refcount;   /* # concurrent users of item */
-    uint8_t           nsuffix;    /* length of flags-and-length string */
     uint8_t           flags;      /* item flags */
     uint8_t           id;         /* slab class id */
     uint8_t           nkey;       /* key length */
@@ -113,23 +112,20 @@ TAILQ_HEAD(item_tqh, item);
  * for an item. An item chunk contains the item header followed by item
  * data.
  *
- * The smallest item data is actually a single byte key with a zero
- * byte value which is of sizeof("k 0 1\r\n1\r\n") - 1. If cas is enabled,
- * then item data should also have enough room for an 8-byte cas value.
+ * The smallest item data is actually a single byte key with a zero byte value
+ * which internally is of sizeof("k"), as key is stored with terminating '\0'.
+ * If cas is enabled, then item payload should have another 8-byte for cas.
  *
  * The largest item data is actually the room left in the slab_size()
  * slab, after the item header has been factored out
  */
-#define ITEM_MIN_DATA_SIZE  (sizeof("k 0 0\r\n\r\n") - 1 + sizeof(uint64_t))
+#define ITEM_MIN_PAYLOAD_SIZE  (sizeof("k") + sizeof(uint64_t))
 #define ITEM_MIN_CHUNK_SIZE \
-    MC_ALIGN(ITEM_HDR_SIZE + ITEM_MIN_DATA_SIZE, MC_ALIGNMENT)
+    MC_ALIGN(ITEM_HDR_SIZE + ITEM_MIN_PAYLOAD_SIZE, MC_ALIGNMENT)
 
-#define ITEM_DATA_SIZE      32
+#define ITEM_PAYLOAD_SIZE      32
 #define ITEM_CHUNK_SIZE     \
-    MC_ALIGN(ITEM_HDR_SIZE + ITEM_DATA_SIZE, MC_ALIGNMENT)
-
-#define ITEM_MIN_SUFFIX_LEN (sizeof("0 0") - 1)
-#define ITEM_MAX_SUFFIX_LEN 40
+    MC_ALIGN(ITEM_HDR_SIZE + ITEM_PAYLOAD_SIZE, MC_ALIGNMENT)
 
 
 #if __GNUC__ >= 4 && __GNUC_MINOR__ >= 2
@@ -176,28 +172,13 @@ item_key(struct item *it)
 }
 
 static inline char *
-item_suffix(struct item *it)
-{
-    char *suffix;
-
-    ASSERT(it->magic == ITEM_MAGIC);
-
-    suffix = it->end + it->nkey + 1;
-    if (it->flags & ITEM_CAS) {
-        suffix += sizeof(uint64_t);
-    }
-
-    return suffix;
-}
-
-static inline char *
 item_data(struct item *it)
 {
     char *data;
 
     ASSERT(it->magic == ITEM_MAGIC);
 
-    data = it->end + it->nkey + 1 + it->nsuffix;
+    data = it->end + it->nkey + 1; /* 1 for terminal '\0' in key */
     if (it->flags & ITEM_CAS) {
         data += sizeof(uint64_t);
     }
@@ -205,44 +186,48 @@ item_data(struct item *it)
     return data;
 }
 
-static inline uint32_t
-item_ntotal(struct item *it)
+static inline size_t
+item_ntotal(uint8_t nkey, uint32_t nbyte, bool use_cas)
 {
-    uint32_t ntotal;
+    size_t ntotal;
+
+    ntotal = use_cas ? sizeof(uint64_t) : 0;
+    ntotal += ITEM_HDR_SIZE + nkey + 1 + nbyte;
+
+    return ntotal;
+}
+
+static inline size_t
+item_size(struct item *it)
+{
 
     ASSERT(it->magic == ITEM_MAGIC);
 
-    ntotal = ITEM_HDR_SIZE + it->nkey + 1 + it->nsuffix + it->nbyte;
-    if (it->flags & ITEM_CAS) {
-        ntotal += sizeof(uint64_t);
-    }
-
-    return ntotal;
+    return item_ntotal(it->nkey, it->nbyte, it->flags & ITEM_CAS);
 }
 
 void item_init(void);
 void item_deinit(void);
 
 struct slab *item_2_slab(struct item *it);
-bool item_size_ok(size_t nkey, int flags, int nbyte);
 
 void item_hdr_init(struct item *it, uint32_t offset, uint8_t id);
 
-struct item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyte);
+uint8_t item_slabid(uint8_t nkey, uint32_t nbyte);
+struct item *item_alloc(uint8_t id, char *key, size_t nkey, uint32_t dataflags, rel_time_t exptime, uint32_t nbyte);
 
 void item_reuse(struct item *it);
 
-void item_link(struct item *it);
-void item_unlink(struct item *it);
+void item_delete(struct item *it);
 
-void item_remove(struct item *item);
-void item_update(struct item *item);
+void item_remove(struct item *it);
+void item_touch(struct item *it);
 char *item_cache_dump(uint8_t id, uint32_t limit, uint32_t *bytes);
 
 struct item *item_get(const char *key, size_t nkey);
 void item_flush_expired(void);
 
-item_store_result_t item_store(struct item *item, req_type_t type, struct conn *c);
+item_store_result_t item_store(struct item *it, req_type_t type, struct conn *c);
 item_delta_result_t item_add_delta(struct conn *c, char *key, size_t nkey, int incr, int64_t delta, char *buf);
 
 #endif

@@ -69,7 +69,8 @@ class Functional64bit(unittest.TestCase):
                 meminfo[name] = value.strip()
         global memFree
         memFree = int(meminfo['MemFree'].rstrip(' kB')) / 1024
-        args = Args(command='MAX_MEMORY = %d\nEVICTION = 0' % memAlloc)
+        # use PREALLOC to test heap size
+        args = Args(command='MAX_MEMORY = %d\nEVICTION = 0\nPREALLOC=True' % memAlloc)
         self.server = startServer(args)
         self.assertIsNotNone(self.server)
         build = self.mc.get_stats()[0][1]['pointer_size']
@@ -86,10 +87,10 @@ class Functional64bit(unittest.TestCase):
             if int(statslabs[slab]['slab_curr']) > 0:
                 active += 1
         self.assertEqual(0, active)
-        # stuff twemcache till it runs out of memory
-        key = 0
-        size = int(statsettings[0][1]['slab_size']) - ITEM_OVERHEAD - SLAB_OVERHEAD - SUFFIX_CAS_LEN - len(str(key))
-        while self.mc.set(str(key), 'a' * size):
+        for key in range(0, 10):
+            size = int(statsettings[0][1]['slab_size']) - ITEM_OVERHEAD - SLAB_OVERHEAD\
+                   - CAS_LEN - len(str(key) + '\0')
+            self.mc.set(str(key), 'a' * size)
             self.assertIsNotNone(self.mc.get(str(key)))
             key += 1
         self.assertIsNone(self.mc.get(str(key)))

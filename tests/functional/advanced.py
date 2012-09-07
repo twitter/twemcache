@@ -53,7 +53,7 @@ class FunctionalAdvanced(unittest.TestCase):
     def test_itemlru(self):
         ''' test item lru algorithm '''
         args = Args(command='MAX_MEMORY = 8\nEVICTION = 1\nTHREADS = 1') #lru eviction
-        size = SLAB_SIZE - ITEM_OVERHEAD - SLAB_OVERHEAD - SUFFIX_CAS_LEN - len("big0")
+        size = SLAB_SIZE - ITEM_OVERHEAD - SLAB_OVERHEAD - CAS_LEN - len("big0\0")
         data = '0' * size
         self.server = startServer(args)
         self.assertTrue(self.mc.set("big0", data))
@@ -68,9 +68,9 @@ class FunctionalAdvanced(unittest.TestCase):
         for i in range(evictions, 10):
             self.assertEqual(str(i) * size, self.mc.get("big%d" % i))
 
-    def test_slablru(self):
-        ''' test slab lru algorithm '''
-        args = Args(command='MAX_MEMORY = 8\nEVICTION = 4\nTHREADS = 1') #lru eviction
+    def test_slablra(self):
+        ''' test slab lra algorithm '''
+        args = Args(command='MAX_MEMORY = 8\nEVICTION = 4\nTHREADS = 1') #lra eviction
         sizes = [10, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480]
         self.server = startServer(args)
         for i in range(8):
@@ -82,6 +82,28 @@ class FunctionalAdvanced(unittest.TestCase):
             self.assertTrue(self.mc.set(str(i), data))
             self.assertIsNone(self.mc.get(str(i-8)))
             self.assertEqual(str(i-7), self.mc.get_stats()[0][1]['slab_evict'])
+
+    def test_slablru(self):
+        ''' test slab lru algorithm '''
+        args = Args(command='MAX_MEMORY = 8\nEVICTION = 8\nTHREADS = 1') #lru eviction
+        sizes = [10, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480]
+        self.server = startServer(args)
+        for i in range(8):
+            data = '0' * sizes[i]
+            self.assertTrue(self.mc.set(str(i), data))
+        time.sleep(2) # sleep for at least SLAB_LRU_UPDATE_INTERVAL
+        for i in range(7,0,-1):
+            self.assertIsNotNone(self.mc.get(str(i)))
+        self.assertEqual("0", self.mc.get_stats()[0][1]['slab_evict'])
+        for i in range(8, 11):
+            data = '0' * sizes[i]
+            self.assertTrue(self.mc.set(str(i), data))
+            self.assertIsNone(self.mc.get(str(i-8)))
+            self.assertEqual(str(i-7), self.mc.get_stats()[0][1]['slab_evict'])
+        self.mc.delete(str(i))
+        self.assertEqual('1', self.mc.get_stats()[0][1]['item_free'])
+        self.mc.set(str(i), '0' * sizes[i]) # shouldn't use the free item
+        self.assertEqual('1', self.mc.get_stats()[0][1]['item_free'])
 
 
 if __name__ == '__main__':

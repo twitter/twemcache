@@ -1,14 +1,18 @@
+2012-09-06  Cache Team <cache-team@twitter.com>
+	* twemcache: version 2.5.1 release
+	* Feature: slab LRC eviction (-M 8), designed for write through cases
+	* Feature: auto klog ratation support, reopen after size reaches 1GB
+			   klog is turned on if a filename is given at start time
+	* Cleanup: data flags and data length now stored as part of item header
+	* Misc: updated TODO list
+
 2012-07-16  Cache Team <cache-team@twitter.com>
 	* twemcache: version 2.5.0 release
-
 	* Feature: slab LRU eviction (-M 4) introduced
-	  multiple eviction strategies can now be stacked
-
+	           multiple eviction strategies can now be stacked
 	* Fix: fix logical error of code and remove meaningless code (monadbobo)
-
 	* Misc: new notes, updated TODO list
-	  add twctop README
-
+			add twctop README
 
 2012-07-10  Cache Team <cache-team@twitter.com>
 

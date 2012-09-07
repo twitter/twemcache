@@ -601,7 +601,7 @@ stats_sizes(void *c)
             struct item *iter;
 
             TAILQ_FOREACH(iter, &item_lruq[i], i_tqe) {
-                int ntotal = item_ntotal(iter);
+                int ntotal = item_size(iter);
                 int bucket = (ntotal - 1) / STATS_BUCKET_SIZE + 1;
                 ASSERT(bucket < num_buckets);
                 histogram[bucket]++;
@@ -655,6 +655,7 @@ stats_settings(void *c)
     stats_print(c, "username", "%s", settings.username);
     stats_print(c, "stats_agg_intvl", "%10.6f", settings.stats_agg_intvl.tv_sec +
                 1.0 * settings.stats_agg_intvl.tv_usec / 1000000);
+    stats_print(c, "hash_power", "%d", settings.hash_power);
     stats_print(c, "klog_name", "%s", settings.klog_name);
     stats_print(c, "klog_sampling_rate", "%d", settings.klog_sampling_rate);
     stats_print(c, "klog_entry", "%d", settings.klog_entry);

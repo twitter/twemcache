@@ -76,10 +76,14 @@
 #define MC_STATS_MAX_INTVL  STATS_MAX_INTVL
 #define MC_STATS_INTVL      STATS_DEFAULT_INTVL
 
+#define MC_HASH_MAX_POWER   HASH_MAX_POWER
+
 #define MC_KLOG_INTVL       KLOG_DEFAULT_INTVL
 #define MC_KLOG_SMP_RATE    KLOG_DEFAULT_SMP_RATE
 #define MC_KLOG_ENTRY       KLOG_DEFAULT_ENTRY
 #define MC_KLOG_FILE        NULL
+#define MC_KLOG_BACKUP      NULL
+#define MC_KLOG_BACKUP_SUF  ".old"
 
 #define MC_WORKERS          4
 #define MC_PID_FILE         NULL
@@ -184,7 +188,7 @@ mc_show_usage(void)
 {
     log_stderr(
         "Usage: twemcache [-?hVCELdkrDS] [-o output file] [-v verbosity level]" CRLF
-        "           [-A stats aggr interval]" CRLF
+        "           [-A stats aggr interval] [-e hash power]" CRLF
         "           [-t threads] [-P pid file] [-u user]" CRLF
         "           [-x command logging entry] [-X command logging file]" CRLF
         "           [-R max requests] [-c max conns] [-b backlog] [-p port] [-U udp port]" CRLF
@@ -210,6 +214,7 @@ mc_show_usage(void)
         "  -o, --output=S              : set the logging file (default: %s)" CRLF
         "  -v, --verbosity=N           : set the logging level (default: %d, min: %d, max: %d)" CRLF
         "  -A, --stats-aggr-interval=N : set the stats aggregation interval in usec (default: %d usec)" CRLF
+        "  -e, --hash-power=N          : set the hash table size as a power of 2 (default: 0, adjustable)" CRLF
         "  -t, --threads=N             : set number of threads to use (default: %d)" CRLF
         "  -P, --pidfile=S             : set the pid file (default: %s)" CRLF
         "  -u, --user=S                : set user identity when run as root (default: %s)"
@@ -486,6 +491,7 @@ mc_set_default_options(void)
     stats_set_interval(MC_STATS_INTVL);
 
     settings.klog_name = MC_KLOG_FILE;
+    settings.klog_backup = MC_KLOG_BACKUP;
     settings.klog_sampling_rate = MC_KLOG_SMP_RATE;
     settings.klog_entry = MC_KLOG_ENTRY;
     klog_set_interval(MC_KLOG_INTVL);
@@ -504,10 +510,13 @@ mc_set_default_options(void)
     settings.access = MC_ACCESS_MASK;
 
     settings.evict_opt = MC_EVICT;
+    settings.use_freeq = true;
+    settings.use_lruq = true;
     settings.factor = MC_FACTOR;
     settings.maxbytes = MC_MAXBYTES;
     settings.chunk_size = MC_CHUNK_SIZE;
     settings.slab_size = MC_SLAB_SIZE;
+    settings.hash_power = 0;
 
     settings.accepting_conns = true;
     settings.oldest_live = 0;
@@ -523,7 +532,8 @@ mc_set_default_options(void)
 static rstatus_t
 mc_get_options(int argc, char **argv)
 {
-    int c, value, len, factor;
+    int c, value, factor;
+    size_t len;
     bool tcp_specified, udp_specified;
 
     tcp_specified = false;
@@ -621,6 +631,22 @@ mc_get_options(int argc, char **argv)
 
             break;
 
+        case 'e':
+            value = mc_atoi(optarg, strlen(optarg));
+            if (value <= 0) {
+                log_stderr("twemcache: option -e requires a positive number");
+                return MC_ERROR;
+            }
+
+            if (value > MC_HASH_MAX_POWER) {
+                log_stderr("twemcache: hash power cannot be greater than %d",
+                           MC_HASH_MAX_POWER);
+                return MC_ERROR;
+            }
+
+            settings.hash_power = value;
+            break;
+
         case 'x':
             value = mc_atoi(optarg, strlen(optarg));
             if (value <= 0) {
@@ -632,6 +658,16 @@ mc_get_options(int argc, char **argv)
 
         case 'X':
             settings.klog_name = optarg;
+            len = strlen(optarg) + sizeof(MC_KLOG_BACKUP_SUF);
+            settings.klog_backup = mc_alloc(len);
+            if (settings.klog_backup == NULL) {
+                log_stderr("twemcache: cannot generate klog backup filename");
+                return MC_ERROR;
+            }
+            value = mc_snprintf(settings.klog_backup, len, "%s"MC_KLOG_BACKUP_SUF,
+                        settings.klog_name);
+            ASSERT(value < len);
+            settings.klog_running = true;
             break;
 
         case 't':
@@ -742,6 +778,10 @@ mc_get_options(int argc, char **argv)
                 return MC_ERROR;
             }
             settings.evict_opt = value;
+            if (value == EVICT_US) {
+                settings.use_freeq = false;
+                settings.use_lruq = false;
+            }
             break;
 
         case 'f':
@@ -848,6 +888,7 @@ mc_get_options(int argc, char **argv)
 
             case 'v':
             case 'A':
+            case 'e':
             case 't':
             case 'R':
             case 'c':
@@ -1046,6 +1087,7 @@ mc_generate_profile(void)
     /* last profile entry always has a 1 item/slab of maximum size */
     profile[id] = max_item_sz;
     settings.profile_last_id = id;
+    settings.max_chunk_size = max_item_sz;
 
     return MC_OK;
 }
@@ -1132,6 +1174,7 @@ mc_parse_profile(void)
 
     settings.chunk_size = profile[SLABCLASS_MIN_ID];
     settings.profile_last_id = id;
+    settings.max_chunk_size = profile[id];
 
     return MC_OK;
 }

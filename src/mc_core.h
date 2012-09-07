@@ -181,8 +181,9 @@ struct slabclass;
 #define EVICT_NONE    0x00 /* throw OOM, no eviction */
 #define EVICT_LRU     0x01 /* per-slab lru eviction */
 #define EVICT_RS      0x02 /* random slab eviction */
-#define EVICT_LS      0x04 /* lru slab eviction */
-#define EVICT_INVALID 0x08 /* go no further! */
+#define EVICT_LS      0x04 /* lra (least recently accessed) slab eviction */
+#define EVICT_US      0x08 /* lru (least recently updated) slab eviction */
+#define EVICT_INVALID 0x10 /* go no further! */
 
 #define DEFINE_ACTION(_type, _min, _max, _nmin, _nmax) REQ_##_type,
 typedef enum req_type {
@@ -223,7 +224,8 @@ struct settings {
     int             verbose;                      /* debug   : log verbosity level */
 
     struct timeval  stats_agg_intvl;              /* stats   : how often we aggregate stats */
-    char            *klog_name;                   /* klog    : name of the command logger */
+    char            *klog_name;                   /* klog    : name of the command log */
+    char            *klog_backup;                 /* klog    : name of the backup after log rotation */
     int             klog_sampling_rate;           /* klog    : log every klog_smp_rate messages */
     int             klog_entry;                   /* klog    : number of entry to buffer per thread */
     struct timeval  klog_intvl;                   /* klog    : how often the command logger collector thread runs */
@@ -242,10 +244,14 @@ struct settings {
     int             access;                       /* network : access mask for unix socket */
 
     int             evict_opt;                    /* memory  : eviction */
+    bool            use_freeq;                    /* memory  : whether use items in freeq or not */
+    bool            use_lruq;                     /* memory  : whether use items in freeq or not */
     double          factor;                       /* memory  : chunk size growth factor */
     size_t          maxbytes;                     /* memory  : maximum bytes allowed for slabs */
     size_t          chunk_size;                   /* memory  : minimum item chunk size */
+    size_t          max_chunk_size;               /* memory  : maximum item chunk size */
     size_t          slab_size;                    /* memory  : slab size */
+    int             hash_power;                   /* memory  : hash table size, 0 for autotune */
 
                                                   /* global state */
 

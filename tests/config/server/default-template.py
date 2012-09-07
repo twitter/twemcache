@@ -86,8 +86,7 @@ SLAB_PROFILE = None # (-z)
 ALIGNMENT = 8 # bytes
 SLAB_OVERHEAD = NATIVE_SLAB_OVERHEAD # per-slab storage overhead at the server
 ITEM_OVERHEAD = NATIVE_ITEM_OVERHEAD # per-item storage overhead at the server
-SUFFIX_LEN = 17 # bytes taken by " flag length\r\n", flag is uint8_t, length uint32_t
-SUFFIX_CAS_LEN = 25 # cas adds another 8 bytes
+CAS_LEN = 8 # cas adds another 8 bytes
 
 # global stats (returns of "stats" command)
 STATS_KEYS = [ # system/service info

@@ -50,7 +50,7 @@ pthread_mutex_t slab_lock;                      /* lock protecting slabclass and
 
 #define SLAB_RAND_MAX_TRIES         50
 #define SLAB_LRU_MAX_TRIES          50
-#define SLAB_LRU_UPDATE_INTERVAL    60
+#define SLAB_LRU_UPDATE_INTERVAL    1
 
 /*
  * Return the usable space for item sized chunks that would be carved out
@@ -545,7 +545,7 @@ slab_get(uint8_t id)
 
     slab = slab_get_new();
 
-    if (slab == NULL && (settings.evict_opt & EVICT_LS)) {
+    if (slab == NULL && (settings.evict_opt & (EVICT_US | EVICT_LS))) {
         slab = slab_evict_lru(id);
     }
 
@@ -576,6 +576,10 @@ slab_get_item_from_freeq(uint8_t id)
 {
     struct slabclass *p; /* parent slabclass */
     struct item *it;
+
+    if (!settings.use_freeq) {
+        return NULL;
+    }
 
     p = &slabclass[id];
 
@@ -699,15 +703,30 @@ slab_put_item(struct item *it)
 }
 
 /*
- * Update slab lruq by moving the given slab to the tail of the slab lruq, but
+ * Touch slab lruq by moving the given slab to the tail of the slab lruq, but
  * only if it hasn't been moved within the last SLAB_LRU_UPDATE_INTERVAL secs.
  */
 void
-slab_update_lruq(struct slab *slab)
+slab_lruq_touch(struct slab *slab, bool allocated)
 {
+    /*
+     * Check eviction option to make sure we adjust the order of slabs only if:
+     * - request comes from allocating an item & lru slab eviction is specified, or
+     * - lra slab eviction is specified
+     */
+    if (!(allocated && (settings.evict_opt & EVICT_US)) &&
+        !(settings.evict_opt & EVICT_LS)) {
+        return;
+    }
+
+
+    /* TODO: find out if we can remove this check w/o impacting performance */
     if (slab->utime >= (time_now() - SLAB_LRU_UPDATE_INTERVAL)) {
         return;
     }
+
+    log_debug(LOG_VERB, "update slab %p with id%"PRIu8" in the slab lruq",
+              slab, slab->id);
 
     pthread_mutex_lock(&slab_lock);
     _slab_unlink_lruq(slab);

@@ -161,6 +161,6 @@ void slab_deinit(void);
 
 struct item *slab_get_item(uint8_t id);
 void slab_put_item(struct item *it);
-void slab_update_lruq(struct slab *slab);
+void slab_lruq_touch(struct slab *slab, bool allocated);
 
 #endif

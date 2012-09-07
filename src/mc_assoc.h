@@ -30,6 +30,8 @@
 #ifndef _MC_ASSOC_H_
 #define _MC_ASSOC_H_
 
+#define HASH_MAX_POWER  32
+
 rstatus_t assoc_init(void);
 void assoc_deinit(void);
 
