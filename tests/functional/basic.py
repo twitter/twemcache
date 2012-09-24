@@ -114,6 +114,9 @@ class FunctionalBasic(unittest.TestCase):
         self.mc.append("foo", "BAR")
         val = self.mc.get("foo")
         self.assertEqual(val, "barBAR")
+        self.mc.append("foo", "bar")
+        val = self.mc.get("foo")
+        self.assertEqual(val, "barBARbar")
 
     def test_prepend(self):
         '''storage: prepend'''
@@ -121,6 +124,26 @@ class FunctionalBasic(unittest.TestCase):
         self.mc.prepend("foo", "BAR")
         val = self.mc.get("foo")
         self.assertEqual(val, "BARbar")
+        self.mc.prepend("foo", "bar")
+        val = self.mc.get("foo")
+        self.assertEqual(val, "barBARbar")
+
+    def test_mixpend(self):
+        '''storage: append mixed with prepend'''
+        self.mc.set("foo", "bar")
+        self.mc.prepend("foo", "BAR")
+        val = self.mc.get("foo")
+        self.assertEqual(val, "BARbar")
+        self.mc.append("foo", "BAR")
+        val = self.mc.get("foo")
+        self.assertEqual(val, "BARbarBAR")
+        self.mc.prepend("foo", "bar")
+        val = self.mc.get("foo")
+        self.assertEqual(val, "barBARbarBAR")
+        self.mc.append("foo", "bar")
+        val = self.mc.get("foo")
+        self.assertEqual(val, "barBARbarBARbar")
+
 
     def test_cas(self):
         '''storage: cas'''

@@ -168,10 +168,17 @@ struct slabclass;
 #define KEY_MAX_LEN     250 /* max key length */
 
 /*
- * I'm told the max length of a 64-bit num converted to string is
- * 20 bytes. Plus a few for spaces, \r\n, \0
+ * suffix includes data flags, data length, and cas value (optional)
+ * The format follows " <flags> <length> <cas>"
+ * line terminator (CRLF) is not part of the suffix in this implementation
+ *
+ * data flags and length are both 4 bytes, 10 bytes each to print;
+ * cas is 8 bytes, 20 bytes to print;
+ * each field needs another byte for the delimiter, which is space;
+ * suffix is also given an extra byte to store '\0'
  */
-#define CAS_SUFFIX_SIZE 24
+#define CAS_SUFFIX_SIZE 21 /* of the cas field only */
+#define SUFFIX_SIZE     23 /* of the other fields */
 
 /* size of an incr buf */
 #define INCR_MAX_STORAGE_LEN 24
@@ -181,8 +188,8 @@ struct slabclass;
 #define EVICT_NONE    0x00 /* throw OOM, no eviction */
 #define EVICT_LRU     0x01 /* per-slab lru eviction */
 #define EVICT_RS      0x02 /* random slab eviction */
-#define EVICT_LS      0x04 /* lra (least recently accessed) slab eviction */
-#define EVICT_US      0x08 /* lru (least recently updated) slab eviction */
+#define EVICT_AS      0x04 /* lra (least recently accessed) slab eviction */
+#define EVICT_CS      0x08 /* lrc (least recently created) slab eviction */
 #define EVICT_INVALID 0x10 /* go no further! */
 
 #define DEFINE_ACTION(_type, _min, _max, _nmin, _nmax) REQ_##_type,

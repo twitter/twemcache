@@ -94,6 +94,28 @@ item_deinit(void)
 }
 
 /*
+ * Get start location of item payload
+ */
+char *
+item_data(struct item *it)
+{
+    char *data;
+
+    ASSERT(it->magic == ITEM_MAGIC);
+
+    if (item_is_raligned(it)) {
+        data = (char *)it + slab_item_size(it->id) - it->nbyte;
+    } else {
+        data = it->end + it->nkey + 1; /* 1 for terminal '\0' in key */
+        if (item_has_cas(it)) {
+            data += sizeof(uint64_t);
+        }
+    }
+
+    return data;
+}
+
+/*
  * Get the slab that contains this item.
  */
 struct slab *
@@ -163,7 +185,7 @@ item_link_q(struct item *it, bool allocated)
 
     ASSERT(id >= SLABCLASS_MIN_ID && id <= SLABCLASS_MAX_ID);
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_SLABBED) == 0);
+    ASSERT(!item_is_slabbed(it));
 
     log_debug(LOG_VVERB, "link q it '%.*s' at offset %"PRIu32" with flags "
               "%02x id %"PRId8"", it->nkey, item_key(it), it->offset,
@@ -213,8 +235,8 @@ item_reuse(struct item *it)
 {
     ASSERT(pthread_mutex_trylock(&cache_lock) != 0);
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_SLABBED) == 0);
-    ASSERT((it->flags & ITEM_LINKED) != 0);
+    ASSERT(!item_is_slabbed(it));
+    ASSERT(item_is_linked(it));
     ASSERT(it->refcount == 0);
 
     it->flags &= ~ITEM_LINKED;
@@ -357,7 +379,8 @@ _item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t
 done:
 
     ASSERT(it->id == id);
-    ASSERT((it->flags & (ITEM_LINKED | ITEM_SLABBED)) == 0);
+    ASSERT(!item_is_linked(it));
+    ASSERT(!item_is_slabbed(it));
     ASSERT(it->offset != 0);
     ASSERT(it->refcount == 0);
 
@@ -406,7 +429,8 @@ static void
 _item_link(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & (ITEM_LINKED | ITEM_SLABBED)) == 0);
+    ASSERT(!item_is_linked(it));
+    ASSERT(!item_is_slabbed(it));
 
     log_debug(LOG_DEBUG, "link it '%.*s' at offset %"PRIu32" with flags "
               "%02x id %"PRId8"", it->nkey, item_key(it), it->offset,
@@ -427,13 +451,13 @@ static void
 _item_unlink(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_LINKED) != 0);
+    ASSERT(item_is_linked(it));
 
     log_debug(LOG_DEBUG, "unlink it '%.*s' at offset %"PRIu32" with flags "
               "%02x id %"PRId8"", it->nkey, item_key(it), it->offset,
               it->flags, it->id);
 
-    if ((it->flags & ITEM_LINKED) != 0) {
+    if (item_is_linked(it)) {
         it->flags &= ~ITEM_LINKED;
 
         assoc_delete(item_key(it), it->nkey);
@@ -454,7 +478,7 @@ static void
 _item_remove(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_SLABBED) == 0);
+    ASSERT(!item_is_slabbed(it));
 
     log_debug(LOG_DEBUG, "remove it '%.*s' at offset %"PRIu32" with flags "
               "%02x id %"PRId8" refcount %"PRIu16"", it->nkey, item_key(it),
@@ -464,7 +488,7 @@ _item_remove(struct item *it)
         item_release_refcount(it);
     }
 
-    if (it->refcount == 0 && (it->flags & ITEM_LINKED) == 0) {
+    if (it->refcount == 0 && !item_is_linked(it)) {
         item_free(it);
     }
 }
@@ -497,7 +521,7 @@ static void
 _item_touch(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_SLABBED) == 0);
+    ASSERT(!item_is_slabbed(it));
 
     if (it->atime >= (time_now() - ITEM_UPDATE_INTERVAL)) {
         return;
@@ -507,11 +531,10 @@ _item_touch(struct item *it)
               "%02x id %"PRId8"", it->nkey, item_key(it), it->offset,
               it->flags, it->id);
 
-    ASSERT((it->flags & ITEM_LINKED) != 0);
-    if ((it->flags & ITEM_LINKED) != 0) {
-        item_unlink_q(it);
-        item_link_q(it, false);
-    }
+    ASSERT(item_is_linked(it));
+
+    item_unlink_q(it);
+    item_link_q(it, false);
 }
 
 void
@@ -533,10 +556,10 @@ static void
 _item_replace(struct item *it, struct item *nit)
 {
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_SLABBED) == 0);
+    ASSERT(!item_is_slabbed(it));
 
     ASSERT(nit->magic == ITEM_MAGIC);
-    ASSERT((nit->flags & ITEM_SLABBED) == 0);
+    ASSERT(!item_is_slabbed(nit));
 
     log_debug(LOG_VERB, "replace it '%.*s' at offset %"PRIu32" id %"PRIu8" "
               "with one at offset %"PRIu32" id %"PRIu8"", it->nkey,
@@ -687,7 +710,7 @@ _item_flush_expired(void)
          * lazily expired by oldest_live check in item_get.
          */
         TAILQ_FOREACH_REVERSE_SAFE(it, &item_lruq[i], item_tqh, i_tqe, next) {
-            ASSERT((it->flags & ITEM_SLABBED) == 0);
+            ASSERT(!item_is_slabbed(it));
 
             if (it->atime < settings.oldest_live) {
                 break;
@@ -787,9 +810,6 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
         case REQ_APPEND:
             stats_slab_incr(oit->id, append_hit);
 
-            /*
-             * Alloc new item - nit to hold both it and oit
-             */
             total_nbyte = oit->nbyte + it->nbyte;
             id = item_slabid(oit->nkey, total_nbyte);
             if (id == SLABCLASS_INVALID_ID) {
@@ -804,23 +824,30 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
                           " with key size %"PRIu8" and value size %"PRIu32,
                           c->sd, c->req_type, oit->nkey, total_nbyte);
             }
-            nit = _item_alloc(id, key, oit->nkey, oit->dataflags, oit->exptime,
-                              total_nbyte);
-            if (nit == NULL) {
-                store_it = false;
-                break;
+
+            /* if oit is large enough to hold the extra data and left-aligned,
+             * which is the default behavior, we copy the delta to the end of
+             * the existing data. Otherwise, allocate a new item and store the
+             * payload left-aligned.
+             */
+            if (id == oit->id && !item_is_raligned(oit)) {
+                memcpy(item_data(oit) + oit->nbyte, item_data(it), it->nbyte);
+                oit->nbyte = total_nbyte;
+                it = oit;
+            } else {
+                nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
+                                  oit->exptime, total_nbyte);
+                if (nit == NULL) {
+                    store_it = false;
+                    break;
+                }
+
+                memcpy(item_data(nit), item_data(oit), oit->nbyte);
+                memcpy(item_data(nit) + oit->nbyte, item_data(it), it->nbyte);
+                it = nit;
             }
 
-            stats_slab_incr(nit->id, append_success);
-
-            /*
-             * Copy total_nbyte of data from it and oit to nit, where
-             *  - append =  nit <- [oit, it]
-             */
-            memcpy(item_data(nit), item_data(oit), oit->nbyte);
-            memcpy(item_data(nit) + oit->nbyte, item_data(it), it->nbyte);
-            it = nit;
-
+            stats_slab_incr(it->id, append_success);
             break;
 
         case REQ_PREPEND:
@@ -836,23 +863,30 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
                           " with key size %"PRIu8" and value size %"PRIu32,
                           c->sd, c->req_type, oit->nkey, total_nbyte);
             }
-            nit = _item_alloc(id, key, oit->nkey, oit->dataflags, oit->exptime,
-                              total_nbyte);
-            if (nit == NULL) {
-                store_it = false;
-                break;
+            /* if oit is large enough to hold the extra data and is already
+             * right-aligned, we copy the delta to the front of the existing
+             * data. Otherwise, allocate a new item and store the payload
+             * right-aligned, assuming more prepends will happen in the future.
+             */
+            if (id == oit->id && item_is_raligned(oit)) {
+                memcpy(item_data(oit) - it->nbyte, item_data(it), it->nbyte);
+                oit->nbyte = total_nbyte;
+                it = oit;
+            } else {
+                nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
+                                  oit->exptime, total_nbyte);
+                if (nit == NULL) {
+                    store_it = false;
+                    break;
+                }
+
+                nit->flags |= ITEM_RALIGN;
+                memcpy(item_data(nit), item_data(it), it->nbyte);
+                memcpy(item_data(nit) + it->nbyte, item_data(oit), oit->nbyte);
+                it = nit;
             }
 
-            stats_slab_incr(nit->id, prepend_success);
-            /*
-             * Copy total_byte of data from it and oit to nit, where
-             *  - prepend = nit <- [it, oit]
-             */
-
-            memcpy(item_data(nit), item_data(it), it->nbyte);
-            memcpy(item_data(nit) + it->nbyte, item_data(oit), oit->nbyte);
-            it = nit;
-
+            stats_slab_incr(it->id, prepend_success);
             break;
 
         case REQ_CAS:

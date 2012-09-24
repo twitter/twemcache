@@ -154,6 +154,7 @@ size_t slab_size(void);
 void slab_print(void);
 void slab_acquire_refcount(struct slab *slab);
 void slab_release_refcount(struct slab *slab);
+size_t slab_item_size(uint8_t id);
 uint8_t slab_id(size_t size);
 
 rstatus_t slab_init(void);

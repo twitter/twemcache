@@ -223,6 +223,7 @@ thread_worker_main(void *arg)
 static rstatus_t
 thread_setup(struct thread_worker *t)
 {
+    size_t suffix_size;
     rstatus_t status;
 
     t->base = event_base_new();
@@ -255,7 +256,8 @@ thread_setup(struct thread_worker *t)
 
     conn_cq_init(&t->new_cq);
 
-    t->suffix_cache = cache_create("suffix", CAS_SUFFIX_SIZE, sizeof(char *));
+    suffix_size = settings.use_cas ? (CAS_SUFFIX_SIZE + SUFFIX_SIZE) : SUFFIX_SIZE;
+    t->suffix_cache = cache_create("suffix", suffix_size, sizeof(char *));
     if (t->suffix_cache == NULL) {
         log_error("cache create of suffix cache failed: %s", strerror(errno));
         return MC_ENOMEM;

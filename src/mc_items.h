@@ -34,6 +34,7 @@ typedef enum item_flags {
     ITEM_LINKED  = 1,  /* item in lru q and hash */
     ITEM_CAS     = 2,  /* item has cas */
     ITEM_SLABBED = 4,  /* item in free q */
+    ITEM_RALIGN  = 8,  /* item data (payload) is right-aligned */
 } item_flags_t;
 
 typedef enum item_store_result {
@@ -131,12 +132,33 @@ TAILQ_HEAD(item_tqh, item);
 #if __GNUC__ >= 4 && __GNUC_MINOR__ >= 2
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 #endif
+
+static inline bool
+item_has_cas(struct item *it) {
+    return (it->flags & ITEM_CAS);
+}
+
+static inline bool
+item_is_linked(struct item *it) {
+    return (it->flags & ITEM_LINKED);
+}
+
+static inline bool
+item_is_slabbed(struct item *it) {
+    return (it->flags & ITEM_SLABBED);
+}
+
+static inline bool
+item_is_raligned(struct item *it) {
+    return (it->flags & ITEM_RALIGN);
+}
+
 static inline uint64_t
 item_cas(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
 
-    if (it->flags & ITEM_CAS) {
+    if (item_has_cas(it)) {
         return *((uint64_t *)it->end);
     }
 
@@ -148,7 +170,7 @@ item_set_cas(struct item *it, uint64_t cas)
 {
     ASSERT(it->magic == ITEM_MAGIC);
 
-    if (it->flags & ITEM_CAS) {
+    if (item_has_cas(it)) {
         *((uint64_t *)it->end) = cas;
     }
 }
@@ -164,26 +186,11 @@ item_key(struct item *it)
     ASSERT(it->magic == ITEM_MAGIC);
 
     key = it->end;
-    if (it->flags & ITEM_CAS) {
+    if (item_has_cas(it)) {
         key += sizeof(uint64_t);
     }
 
     return key;
-}
-
-static inline char *
-item_data(struct item *it)
-{
-    char *data;
-
-    ASSERT(it->magic == ITEM_MAGIC);
-
-    data = it->end + it->nkey + 1; /* 1 for terminal '\0' in key */
-    if (it->flags & ITEM_CAS) {
-        data += sizeof(uint64_t);
-    }
-
-    return data;
 }
 
 static inline size_t
@@ -203,12 +210,13 @@ item_size(struct item *it)
 
     ASSERT(it->magic == ITEM_MAGIC);
 
-    return item_ntotal(it->nkey, it->nbyte, it->flags & ITEM_CAS);
+    return item_ntotal(it->nkey, it->nbyte, item_has_cas(it));
 }
 
 void item_init(void);
 void item_deinit(void);
 
+char * item_data(struct item *it);
 struct slab *item_2_slab(struct item *it);
 
 void item_hdr_init(struct item *it, uint32_t offset, uint8_t id);

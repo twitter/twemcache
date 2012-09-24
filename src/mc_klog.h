@@ -32,7 +32,7 @@
 
 #define KLOG_DEFAULT_INTVL    1000 /* logging interval in msec */
 #define KLOG_MIN_INTVL        100  /* do not allow shorter intervals to be set */
-#define KLOG_DEFAULT_SMP_RATE 1    /* log always by default */
+#define KLOG_DEFAULT_SMP_RATE 100  /* log 1 out of 100 commands by default */
 #define KLOG_DEFAULT_HOST     "-"
 #define KLOG_DEFAULT_ENTRY    512
 

@@ -92,12 +92,13 @@ void
 cache_destroy(cache_t *cache)
 {
     while (cache->freecurr > 0) {
-        void *ptr = cache->ptr[--cache->freecurr];
-        mc_free(ptr);
+        void *buf = cache->ptr[--cache->freecurr];
+        mc_free(buf);
     }
     mc_free(cache->name);
     mc_free(cache->ptr);
     pthread_mutex_destroy(&cache->mutex);
+    mc_free(cache);
 }
 
 /*
@@ -133,12 +134,12 @@ cache_alloc(cache_t *cache)
  * @param ptr pointer to the object to return.
  */
 void
-cache_free(cache_t *cache, void *ptr)
+cache_free(cache_t *cache, void *buf)
 {
     pthread_mutex_lock(&cache->mutex);
 
     if (cache->freecurr < cache->freetotal) {
-        cache->ptr[cache->freecurr++] = ptr;
+        cache->ptr[cache->freecurr++] = buf;
     } else {
         /* try to enlarge free connections array */
         size_t newtotal = cache->freetotal * 2;
@@ -146,9 +147,9 @@ cache_free(cache_t *cache, void *ptr)
         if (new_free != NULL) {
             cache->freetotal = newtotal;
             cache->ptr = new_free;
-            cache->ptr[cache->freecurr++] = ptr;
+            cache->ptr[cache->freecurr++] = buf;
         } else {
-            mc_free(ptr);
+            mc_free(buf);
 
         }
     }

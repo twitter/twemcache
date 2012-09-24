@@ -128,6 +128,7 @@ static struct option long_options[] = {
     { "stats-aggr-interval",  required_argument,  NULL,   'A' }, /* stats aggregation interval in usec */
     { "klog-entry",           required_argument,  NULL,   'x' }, /* command logging entry number */
     { "klog-file",            required_argument,  NULL,   'X' }, /* command logging file */
+    { "klog-sample-rate",     required_argument,  NULL,   'y' }, /* command logging sampling rate */
     { "threads",              required_argument,  NULL,   't' }, /* # of threads */
     { "pidfile",              required_argument,  NULL,   'P' }, /* pid file */
     { "user",                 required_argument,  NULL,   'u' }, /* user identity to run as */
@@ -164,6 +165,7 @@ static char short_options[] =
     "A:" /* stats aggregation interval in msec */
     "x:" /* command logging entry number */
     "X:" /* command logging file */
+    "y:" /* command logging sample rate */
     "t:" /* # of threads */
     "P:" /* pid file */
     "u:" /* user identity to run as */
@@ -190,7 +192,7 @@ mc_show_usage(void)
         "Usage: twemcache [-?hVCELdkrDS] [-o output file] [-v verbosity level]" CRLF
         "           [-A stats aggr interval] [-e hash power]" CRLF
         "           [-t threads] [-P pid file] [-u user]" CRLF
-        "           [-x command logging entry] [-X command logging file]" CRLF
+        "           [-x command logging entry] [-X command logging file] [-y command logging sample rate]" CRLF
         "           [-R max requests] [-c max conns] [-b backlog] [-p port] [-U udp port]" CRLF
         "           [-l interface] [-s unix path] [-a access mask] [-M eviction strategy]" CRLF
         "           [-f factor] [-m max memory] [-n min item chunk size] [-I slab size]" CRLF
@@ -228,10 +230,12 @@ mc_show_usage(void)
 
     log_stderr(
         "  -x, --klog-entry=N          : set the command logging entry number per thread (default: %d)" CRLF
-        "  -X, --klog-file=S           : set the command logging file (default: %s)"
+        "  -X, --klog-file=S           : set the command logging file (default: %s)" CRLF
+        "  -y, --klog-sample-rate=N    : set the command logging sample rate (default: %d)"
         " ",
         MC_KLOG_ENTRY,
-        MC_KLOG_FILE != NULL ? MC_KLOG_FILE : "off"
+        MC_KLOG_FILE != NULL ? MC_KLOG_FILE : "off",
+        MC_KLOG_SMP_RATE
         );
 
     log_stderr(
@@ -650,7 +654,7 @@ mc_get_options(int argc, char **argv)
         case 'x':
             value = mc_atoi(optarg, strlen(optarg));
             if (value <= 0) {
-                log_stderr("twemcache: option -w requires a positive number");
+                log_stderr("twemcache: option -x requires a positive number");
                 return MC_ERROR;
             }
             settings.klog_entry = value;
@@ -668,6 +672,15 @@ mc_get_options(int argc, char **argv)
                         settings.klog_name);
             ASSERT(value < len);
             settings.klog_running = true;
+            break;
+
+        case 'y':
+            value = mc_atoi(optarg, strlen(optarg));
+            if (value <= 0) {
+                log_stderr("twemcache: option -y requires a positive number");
+                return MC_ERROR;
+            }
+            settings.klog_sampling_rate = value;
             break;
 
         case 't':
@@ -778,7 +791,7 @@ mc_get_options(int argc, char **argv)
                 return MC_ERROR;
             }
             settings.evict_opt = value;
-            if (value == EVICT_US) {
+            if (value == EVICT_CS) {
                 settings.use_freeq = false;
                 settings.use_lruq = false;
             }

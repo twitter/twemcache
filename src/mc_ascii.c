@@ -451,8 +451,7 @@ asc_set_noreply_maybe(struct conn *c, struct token *token, int ntoken)
 }
 
 static rstatus_t
-asc_create_cas_suffix(struct conn *c, unsigned valid_key_iter,
-                      char **cas_suffix)
+asc_create_suffix(struct conn *c, unsigned valid_key_iter, char **suffix)
 {
     if (valid_key_iter >= c->ssize) {
         char **new_suffix_list;
@@ -465,8 +464,8 @@ asc_create_cas_suffix(struct conn *c, unsigned valid_key_iter,
         c->slist  = new_suffix_list;
     }
 
-    *cas_suffix = cache_alloc(c->thread->suffix_cache);
-    if (*cas_suffix == NULL) {
+    *suffix = cache_alloc(c->thread->suffix_cache);
+    if (*suffix == NULL) {
         log_warn("server error on c %d for req of type %d with enomem on "
                  "suffix cache", c->sd, c->req_type);
 
@@ -474,7 +473,7 @@ asc_create_cas_suffix(struct conn *c, unsigned valid_key_iter,
         return MC_ENOMEM;
     }
 
-    *(c->slist + valid_key_iter) = *cas_suffix;
+    *(c->slist + valid_key_iter) = *suffix;
     return MC_OK;
 }
 
@@ -490,8 +489,7 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
                 bool return_cas)
 {
     rstatus_t status;
-    char *cas_suffix = NULL;
-    char suffix[SUFFIX_MAX_LEN];
+    char *suffix = NULL;
     int sz;
     int total_len = 0;
 
@@ -506,37 +504,28 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
     }
     total_len += it->nkey;
 
-    sz = snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32, it->dataflags,
-                  it->nbyte);
+    status = asc_create_suffix(c, valid_key_iter, &suffix);
+    if (status != MC_OK) {
+        return status;
+    }
+    if (return_cas) {
+        sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32" %"PRIu64,
+                      it->dataflags, it->nbyte, item_cas(it));
+        ASSERT(sz < SUFFIX_SIZE + CAS_SUFFIX_SIZE);
+     } else {
+        sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32,
+                      it->dataflags, it->nbyte);
+        ASSERT(sz < SUFFIX_SIZE);
+    }
     if (sz < 0) {
         return MC_ERROR;
     }
-    ASSERT(sz < SUFFIX_MAX_LEN); /* or we have a corrupted item */
 
     status = conn_add_iov(c, suffix, sz);
     if (status != MC_OK) {
         return status;
     }
     total_len += sz;
-
-    if (return_cas) {
-        status = asc_create_cas_suffix(c, valid_key_iter, &cas_suffix);
-        if (status != MC_OK) {
-            return status;
-        }
-
-        sz = snprintf(cas_suffix, CAS_SUFFIX_SIZE, " %"PRIu64, item_cas(it));
-        if (sz < 0) {
-            return MC_ERROR;
-        }
-        ASSERT(sz < CAS_SUFFIX_SIZE);
-
-        status = conn_add_iov(c, cas_suffix, sz);
-        if (status != MC_OK) {
-            return status;
-        }
-        total_len += sz;
-    }
 
     status = conn_add_iov(c, CRLF, CRLF_LEN);
     if (status != MC_OK) {

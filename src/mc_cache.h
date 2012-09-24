@@ -49,6 +49,6 @@ typedef struct {
 cache_t *cache_create(const char* name, size_t bufsize, size_t align);
 void cache_destroy(cache_t* handle);
 void* cache_alloc(cache_t* handle);
-void cache_free(cache_t* handle, void* ptr);
+void cache_free(cache_t* handle, void* buf);
 
 #endif

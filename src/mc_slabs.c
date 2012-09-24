@@ -117,6 +117,16 @@ slab_2_item(struct slab *slab, uint32_t idx, size_t size)
 }
 
 /*
+ * Return the item size given a slab id
+ */
+size_t
+slab_item_size(uint8_t id) {
+    ASSERT(id >= SLABCLASS_MIN_ID && id <= slabclass_max_id);
+
+    return slabclass[id].size;
+}
+
+/*
  * Return the id of the slab which can store an item of a given size.
  *
  * Return SLABCLASS_INVALID_ID, for large items which cannot be stored in
@@ -406,9 +416,9 @@ slab_evict_one(struct slab *slab)
         ASSERT(it->refcount == 0);
         ASSERT(it->offset != 0);
 
-        if ((it->flags & ITEM_LINKED) != 0) {
+        if (item_is_linked(it)) {
             item_reuse(it);
-        } else if ((it->flags & ITEM_SLABBED) != 0) {
+        } else if (item_is_slabbed(it)) {
             ASSERT(slab == item_2_slab(it));
             ASSERT(!TAILQ_EMPTY(&p->free_itemq));
 
@@ -545,7 +555,7 @@ slab_get(uint8_t id)
 
     slab = slab_get_new();
 
-    if (slab == NULL && (settings.evict_opt & (EVICT_US | EVICT_LS))) {
+    if (slab == NULL && (settings.evict_opt & (EVICT_CS | EVICT_AS))) {
         slab = slab_evict_lru(id);
     }
 
@@ -590,8 +600,8 @@ slab_get_item_from_freeq(uint8_t id)
     it = TAILQ_FIRST(&p->free_itemq);
 
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT((it->flags & ITEM_SLABBED) != 0);
-    ASSERT((it->flags & ITEM_LINKED) == 0);
+    ASSERT(item_is_slabbed(it));
+    ASSERT(!item_is_linked(it));
 
     it->flags &= ~ITEM_SLABBED;
 
@@ -669,7 +679,8 @@ slab_put_item_into_freeq(struct item *it)
 
     ASSERT(id >= SLABCLASS_MIN_ID && id <= slabclass_max_id);
     ASSERT(item_2_slab(it)->id == id);
-    ASSERT((it->flags & (ITEM_LINKED | ITEM_SLABBED)) == 0);
+    ASSERT(!item_is_linked(it));
+    ASSERT(!item_is_slabbed(it));
     ASSERT(it->refcount == 0);
     ASSERT(it->offset != 0);
 
@@ -714,8 +725,8 @@ slab_lruq_touch(struct slab *slab, bool allocated)
      * - request comes from allocating an item & lru slab eviction is specified, or
      * - lra slab eviction is specified
      */
-    if (!(allocated && (settings.evict_opt & EVICT_US)) &&
-        !(settings.evict_opt & EVICT_LS)) {
+    if (!(allocated && (settings.evict_opt & EVICT_CS)) &&
+        !(settings.evict_opt & EVICT_AS)) {
         return;
     }
 

@@ -1,3 +1,9 @@
+2012-09-24  Cache Team <cache-team@twitter.com>
+	* twemcache: version 2.5.2 release
+	* Feature: command line option for klog sampling rate, default is now 100
+	* Fix: garbled data in suffix
+	* Performance: avoid all unnecessary memcpy in processing prepend/apprend
+
 2012-09-06  Cache Team <cache-team@twitter.com>
 	* twemcache: version 2.5.1 release
 	* Feature: slab LRC eviction (-M 8), designed for write through cases
