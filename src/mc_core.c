@@ -825,7 +825,7 @@ core_create_inet_socket(int port, int udp)
             int flags = 1;
             error = setsockopt(sd, IPPROTO_IPV6, IPV6_V6ONLY, (char *) &flags, sizeof(flags));
             if (error != 0) {
-                log_error("set nonblock on sd %d failed: %s", sd,
+                log_error("set ipv6 on sd %d failed: %s", sd,
                           strerror(errno));
                 close(sd);
                 continue;
