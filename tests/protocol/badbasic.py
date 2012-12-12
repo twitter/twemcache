@@ -92,6 +92,17 @@ class ProtocolBadBasic(unittest.TestCase):
         server.send_cmd("get {0}\r\n".format(key)) # looooooong key
         self.assertEqual("CLIENT_ERROR", server.expect("CLIENT_ERROR"))
 
+    def test_largevalue(self):
+        '''Append/prepend grows item out of size range.'''
+        key = 'appendto'
+        val = '0' * (SLAB_SIZE - SLAB_OVERHEAD - ITEM_OVERHEAD - 100)
+        self.mc.set(key, val)
+        self.assertEqual(val, self.mc.get(key))
+        delta = '0' * 100
+        self.mc.append(key, delta) # delta makes the value out of range, no-op expected
+        self.assertEqual(val, self.mc.get(key))
+        self.mc.prepend(key, delta) # delta makes the value out of range, no-op expected
+        self.assertEqual(val, self.mc.get(key))
 
 if __name__ == '__main__':
     server = startServer()

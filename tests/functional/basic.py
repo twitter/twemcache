@@ -241,6 +241,13 @@ class FunctionalBasic(unittest.TestCase):
         self.mc.incr("numkey", 2)
         val = self.mc.get("numkey")
         self.assertEqual(val, "3")
+        self.mc.set("numkey", "9")
+        self.mc.incr("numkey")
+        val = self.mc.get("numkey")
+        self.assertEqual(val, "10")
+        self.mc.incr("numkey")
+        val = self.mc.get("numkey")
+        self.assertEqual(val, "11")
 
     def test_decr(self):
         '''numeric: decr'''

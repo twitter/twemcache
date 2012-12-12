@@ -1,7 +1,7 @@
 # Define the package version numbers and the bug reporting address
 m4_define([MC_MAJOR], 2)
 m4_define([MC_MINOR], 5)
-m4_define([MC_PATCH], 2)
+m4_define([MC_PATCH], 3)
 m4_define([MC_BUGS], [cache-team@twitter.com])
 
 # Initialize autoconf
@@ -101,6 +101,7 @@ AS_CASE([x$enable_debug],
   [xfull], [AC_DEFINE([HAVE_ASSERT_PANIC], [1],
                       [Define to 1 if panic on an assert is enabled])
             AC_DEFINE([HAVE_DEBUG_LOG], [1], [Define to 1 if debug log is enabled])
+            AC_DEFINE([HAVE_MEM_SCRUB], [1], [Define to 1 if memory scrubbing is enabled])
            ],
   [xyes], [AC_DEFINE([HAVE_ASSERT_LOG], [1],
                      [Define to 1 if log on an assert is enabled])

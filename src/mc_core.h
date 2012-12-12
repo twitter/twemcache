@@ -51,6 +51,12 @@
 # define MC_ASSERT_LOG 0
 #endif
 
+#ifdef HAVE_MEM_SCRUB
+# define MC_MEM_SCRUB 1
+#else
+# define MC_MEM_SCRUB 0
+#endif
+
 #ifdef DISABLE_STATS
 # define MC_DISABLE_STATS 1
 #else
@@ -178,7 +184,7 @@ struct slabclass;
  * suffix is also given an extra byte to store '\0'
  */
 #define CAS_SUFFIX_SIZE 21 /* of the cas field only */
-#define SUFFIX_SIZE     23 /* of the other fields */
+#define SUFFIX_SIZE     22 /* of the other fields */
 
 /* size of an incr buf */
 #define INCR_MAX_STORAGE_LEN 24

@@ -89,7 +89,7 @@ class Functional64bit(unittest.TestCase):
         self.assertEqual(0, active)
         for key in range(0, 10):
             size = int(statsettings[0][1]['slab_size']) - ITEM_OVERHEAD - SLAB_OVERHEAD\
-                   - CAS_LEN - len(str(key) + '\0')
+                   - CAS_LEN - len(str(key) + '\0') - 2 # CRLF_LEN
             self.mc.set(str(key), 'a' * size)
             self.assertIsNotNone(self.mc.get(str(key)))
             key += 1
