@@ -256,7 +256,8 @@ thread_setup(struct thread_worker *t)
 
     conn_cq_init(&t->new_cq);
 
-    suffix_size = settings.use_cas ? (CAS_SUFFIX_SIZE + SUFFIX_SIZE) : SUFFIX_SIZE;
+    suffix_size = settings.use_cas ? (CAS_SUFFIX_SIZE + SUFFIX_SIZE + 1) :
+                  (SUFFIX_SIZE + 1);
     t->suffix_cache = cache_create("suffix", suffix_size, sizeof(char *));
     if (t->suffix_cache == NULL) {
         log_error("cache create of suffix cache failed: %s", strerror(errno));

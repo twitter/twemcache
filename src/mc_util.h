@@ -36,6 +36,8 @@
 #define CR              (uint8_t) 13
 #define CRLF            "\x0d\x0a"
 #define CRLF_LEN        (uint32_t) (sizeof(CRLF) - 1)
+#define VALUE           "VALUE "
+#define VALUE_LEN       sizeof(VALUE) - 1
 
 #define NELEMS(a)       ((sizeof(a)) / sizeof((a)[0]))
 
@@ -142,6 +144,7 @@ bool mc_valid_port(int n);
  * Wrappers around strtoull, strtoll, strtoul, strtol that are safer and
  * easier to use. Returns true if conversion succeeds.
  */
+bool mc_strtoull_len(const char *str, uint64_t *out, size_t len);
 bool mc_strtoull(const char *str, uint64_t *out);
 bool mc_strtoll(const char *str, int64_t *out);
 bool mc_strtoul(const char *str, uint32_t *out);

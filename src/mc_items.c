@@ -356,12 +356,12 @@ _item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t
 
     it = slab_get_item(id);
     if (it != NULL) {
-        /* 2) or 3a) either we allow random eviction a free item is found */
+        /* 2) or 3) either we allow random eviction a free item is found */
         goto done;
     }
 
     if (uit != NULL) {
-        /* 3b) this is an lru item and we can reuse it */
+        /* 4) this is an lru item and we can reuse it */
         it = uit;
         stats_slab_incr(id, item_evict);
         stats_slab_settime(id, item_evict_ts, time_now());
@@ -391,6 +391,9 @@ done:
     it->nbyte = nbyte;
     it->exptime = exptime;
     it->nkey = nkey;
+#if defined MC_MEM_SCRUB && MC_MEM_SCRUB == 1
+    memset(it->end, 0xff, slab_item_size(it->id) - ITEM_HDR_SIZE);
+#endif
     memcpy(item_key(it), key, nkey);
 
     stats_slab_incr(id, item_acquire);
@@ -403,13 +406,13 @@ done:
 }
 
 struct item *
-item_alloc(uint8_t id, char *key, size_t nkey, uint32_t flags,
+item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags,
            rel_time_t exptime, uint32_t nbyte)
 {
     struct item *it;
 
     pthread_mutex_lock(&cache_lock);
-    it = _item_alloc(id, key, nkey, flags, exptime, nbyte);
+    it = _item_alloc(id, key, nkey, dataflags, exptime, nbyte);
     pthread_mutex_unlock(&cache_lock);
 
     return it;
@@ -531,10 +534,10 @@ _item_touch(struct item *it)
               "%02x id %"PRId8"", it->nkey, item_key(it), it->offset,
               it->flags, it->id);
 
-    ASSERT(item_is_linked(it));
-
-    item_unlink_q(it);
-    item_link_q(it, false);
+    if (item_is_linked(it)) {
+        item_unlink_q(it);
+        item_link_q(it, false);
+    }
 }
 
 void
@@ -823,6 +826,10 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
                 log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
                           " with key size %"PRIu8" and value size %"PRIu32,
                           c->sd, c->req_type, oit->nkey, total_nbyte);
+
+                stats_thread_incr(cmd_error);
+                store_it = false;
+                break;
             }
 
             /* if oit is large enough to hold the extra data and left-aligned,
@@ -834,6 +841,8 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
                 memcpy(item_data(oit) + oit->nbyte, item_data(it), it->nbyte);
                 oit->nbyte = total_nbyte;
                 it = oit;
+                item_set_cas(it, item_next_cas());
+                store_it = false;
             } else {
                 nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
                                   oit->exptime, total_nbyte);
@@ -862,6 +871,10 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
                 log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
                           " with key size %"PRIu8" and value size %"PRIu32,
                           c->sd, c->req_type, oit->nkey, total_nbyte);
+
+                stats_thread_incr(cmd_error);
+                store_it = false;
+                break;
             }
             /* if oit is large enough to hold the extra data and is already
              * right-aligned, we copy the delta to the front of the existing
@@ -872,6 +885,8 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
                 memcpy(item_data(oit) - it->nbyte, item_data(it), it->nbyte);
                 oit->nbyte = total_nbyte;
                 it = oit;
+                item_set_cas(it, item_next_cas());
+                store_it = false;
             } else {
                 nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
                                   oit->exptime, total_nbyte);
@@ -915,6 +930,10 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
             _item_link(it);
         }
         result = STORED;
+
+        log_debug(LOG_VERB, "store it '%.*s'at offset %"PRIu32" with flags %02x"
+                  " id %"PRId8"", it->nkey, item_key(it), it->offset, it->flags,
+                  it->id);
     }
 
     /* release our reference, if any */
@@ -960,7 +979,7 @@ _item_add_delta(struct conn *c, char *key, size_t nkey, bool incr,
 
     ptr = item_data(it);
 
-    if (!mc_strtoull(ptr, &value)) {
+    if (!mc_strtoull_len(ptr, &value, it->nbyte)) {
         _item_remove(it);
         return DELTA_NON_NUMERIC;
     }
@@ -1019,9 +1038,8 @@ _item_add_delta(struct conn *c, char *key, size_t nkey, bool incr,
         }
 
         item_set_cas(it, item_next_cas());
-
         memcpy(item_data(it), buf, res);
-        memset(item_data(it) + res, ' ', it->nbyte - res);
+        it->nbyte = res;
     }
 
     _item_remove(it);

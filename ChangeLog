@@ -1,3 +1,13 @@
+2012-12-11  Cache Team <cache-team@twitter.com>
+	* twemcache: version 2.5.3 release
+	* Fix: insufficient item length causing segfault
+	* Fix: get/delete race causing segfault
+	* Fix: inconsistency in prepend/append replies under concurrency
+	* Fix: update cas for in-place prepend/append
+	* Fix: strtoull function taking length as a parameter to avoid overrun
+	* Debug: memory-scrubbing enabled in full debug build
+	* Misc: soarpenguin's several from https://github.com/twitter/twemcache/pull/15
+
 2012-09-24  Cache Team <cache-team@twitter.com>
 	* twemcache: version 2.5.2 release
 	* Feature: command line option for klog sampling rate, default is now 100

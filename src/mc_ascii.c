@@ -100,7 +100,7 @@ extern struct settings settings;
 #define TOKEN_KLOG_SUBCOMMAND   3
 #define TOKEN_MAX               8
 
-#define SUFFIX_MAX_LEN 32 /* enough to hold "<uint32_t> <uint32_t> \r\n" */
+#define SUFFIX_MAX_LEN 44 /* =11+11+21+1 enough to hold " <uint32_t> <uint32_t> <uint64_t>\0" */
 
 struct token {
     char   *val; /* token value */
@@ -429,7 +429,7 @@ asc_complete_nread(struct conn *c)
       }
     }
 
-    item_remove(c->item);
+    item_remove(it);
     c->item = NULL;
 }
 
@@ -492,11 +492,14 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
     char *suffix = NULL;
     int sz;
     int total_len = 0;
+    uint32_t nbyte = it->nbyte;
+    char *data = item_data(it);
 
-    status = conn_add_iov(c, "VALUE ", sizeof("VALUE ") - 1);
+    status = conn_add_iov(c, VALUE, VALUE_LEN);
     if (status != MC_OK) {
         return status;
     }
+    total_len += VALUE_LEN;
 
     status = conn_add_iov(c, item_key(it), it->nkey);
     if (status != MC_OK) {
@@ -510,12 +513,12 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
     }
     if (return_cas) {
         sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32" %"PRIu64,
-                      it->dataflags, it->nbyte, item_cas(it));
-        ASSERT(sz < SUFFIX_SIZE + CAS_SUFFIX_SIZE);
+                      it->dataflags, nbyte, item_cas(it));
+        ASSERT(sz <= SUFFIX_SIZE + CAS_SUFFIX_SIZE);
      } else {
         sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32,
-                      it->dataflags, it->nbyte);
-        ASSERT(sz < SUFFIX_SIZE);
+                      it->dataflags, nbyte);
+        ASSERT(sz <= SUFFIX_SIZE);
     }
     if (sz < 0) {
         return MC_ERROR;
@@ -533,11 +536,11 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
     }
     total_len += CRLF_LEN;
 
-    status = conn_add_iov(c, item_data(it), it->nbyte);
+    status = conn_add_iov(c, data, nbyte);
     if (status != MC_OK) {
         return status;
     }
-    total_len += it->nbyte;
+    total_len += nbyte;
 
     status = conn_add_iov(c, CRLF, CRLF_LEN);
     if (status != MC_OK) {
@@ -686,7 +689,8 @@ static void
 asc_process_update(struct conn *c, struct token *token, int ntoken)
 {
     char *key;
-    size_t nkey;
+    size_t keylen;
+    uint8_t nkey;
     uint32_t flags, vlen;
     int32_t exptime_int;
     time_t exptime;
@@ -710,14 +714,16 @@ asc_process_update(struct conn *c, struct token *token, int ntoken)
     type = c->req_type;
     handle_cas = (type == REQ_CAS) ? true : false;
     key = token[TOKEN_KEY].val;
-    nkey = token[TOKEN_KEY].len;
+    keylen = token[TOKEN_KEY].len;
 
-    if (nkey > KEY_MAX_LEN) {
+    if (keylen > KEY_MAX_LEN) {
         log_debug(LOG_NOTICE, "client error on c %d for req of type %d and %d "
-                  "length key", c->sd, c->req_type, nkey);
+                  "length key", c->sd, c->req_type, keylen);
 
         asc_write_client_error(c);
         return;
+    } else {
+        nkey = (uint8_t)keylen;
     }
 
     if (!mc_strtoul(token[TOKEN_FLAGS].val, &flags)) {
@@ -913,6 +919,10 @@ asc_process_delete(struct conn *c, struct token *token, int ntoken)
         return;
     }
 
+    /*
+     * FIXME: This is not thread-safe, two threads could try to delete the same
+     * item twice after succeeding in item_get, leading to erroneous stats
+     */
     it = item_get(key, nkey);
     if (it != NULL) {
         stats_slab_incr(it->id, delete_hit);

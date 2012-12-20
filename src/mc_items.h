@@ -199,7 +199,7 @@ item_ntotal(uint8_t nkey, uint32_t nbyte, bool use_cas)
     size_t ntotal;
 
     ntotal = use_cas ? sizeof(uint64_t) : 0;
-    ntotal += ITEM_HDR_SIZE + nkey + 1 + nbyte;
+    ntotal += ITEM_HDR_SIZE + nkey + 1 + nbyte + CRLF_LEN;
 
     return ntotal;
 }
@@ -222,7 +222,7 @@ struct slab *item_2_slab(struct item *it);
 void item_hdr_init(struct item *it, uint32_t offset, uint8_t id);
 
 uint8_t item_slabid(uint8_t nkey, uint32_t nbyte);
-struct item *item_alloc(uint8_t id, char *key, size_t nkey, uint32_t dataflags, rel_time_t exptime, uint32_t nbyte);
+struct item *item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t exptime, uint32_t nbyte);
 
 void item_reuse(struct item *it);
 
