@@ -133,6 +133,7 @@ struct slabclass;
 #include <mc_time.h>
 #include <mc_util.h>
 #include <mc_hash.h>
+#include <mc_alloc.h>
 
 /*
  *          request    min          max     noreply   noreply

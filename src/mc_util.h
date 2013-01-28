@@ -64,44 +64,6 @@
 #define MC_UINT64_MAXLEN    (20 + 1)
 #define MC_UINTMAX_MAXLEN   MC_UINT64_MAXLEN
 
-/*
- * Make data 'd' or pointer 'p', n-byte aligned, where n is a power of 2
- * of 2.
- */
-#define MC_ALIGNMENT        sizeof(unsigned long) /* platform word */
-#define MC_ALIGN(d, n)      ((size_t)(((d) + (n - 1)) & ~(n - 1)))
-#define MC_ALIGN_PTR(p, n)  \
-    (void *) (((uintptr_t) (p) + ((uintptr_t) n - 1)) & ~((uintptr_t) n - 1))
-
-/*
- * Memory allocation and free wrappers.
- *
- * These wrappers enables us to loosely detect double free, dangling
- * pointer access and zero-byte alloc.
- */
-#define mc_alloc(_s)                    \
-    _mc_alloc((size_t)(_s), __FILE__, __LINE__)
-
-#define mc_zalloc(_s)                   \
-    _mc_zalloc((size_t)(_s), __FILE__, __LINE__)
-
-#define mc_calloc(_n, _s)               \
-    _mc_calloc((size_t)(_n), (size_t)(_s), __FILE__, __LINE__)
-
-#define mc_realloc(_p, _s)              \
-    _mc_realloc(_p, (size_t)(_s), __FILE__, __LINE__)
-
-#define mc_free(_p) do {                \
-    _mc_free(_p, __FILE__, __LINE__);   \
-    (_p) = NULL;                        \
-} while (0)
-
-void *_mc_alloc(size_t size, const char *name, int line);
-void *_mc_zalloc(size_t size, const char *name, int line);
-void *_mc_calloc(size_t nmemb, size_t size, const char *name, int line);
-void *_mc_realloc(void *ptr, size_t size, const char *name, int line);
-void _mc_free(void *ptr, const char *name, int line);
-
 int mc_set_blocking(int sd);
 int mc_set_nonblocking(int sd);
 int mc_set_reuseaddr(int sd);

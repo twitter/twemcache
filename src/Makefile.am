@@ -25,4 +25,5 @@ twemcache_SOURCES =			\
 	mc_queue.h			\
 	mc_cache.c mc_cache.h		\
 	mc_klog.c mc_klog.h		\
+	mc_alloc.c mc_alloc.h		\
 	mc.c
