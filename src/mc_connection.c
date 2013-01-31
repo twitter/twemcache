@@ -312,6 +312,10 @@ conn_cleanup(struct conn *c)
     if (c->write_and_free != NULL) {
         mc_free(c->write_and_free);
     }
+
+    if (c->udp) {
+        conn_set_state(c, CONN_READ);
+    }
 }
 
 void

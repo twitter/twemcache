@@ -147,7 +147,7 @@ core_read_udp(struct conn *c)
         res -= 8;
         memmove(c->rbuf, c->rbuf + 8, res);
 
-        c->rbytes += res;
+        c->rbytes = res;
         c->rcurr = c->rbuf;
 
         return READ_DATA_RECEIVED;
