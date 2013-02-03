@@ -174,7 +174,7 @@ item_set_cas(struct item *it, uint64_t cas)
         *((uint64_t *)it->end) = cas;
     }
 }
-#if __GNUC__ >= 4 && __GNUC_MINOR__ >= 2
+#if __GNUC__ >= 4 && __GNUC_MINOR__ >= 6
 #pragma GCC diagnostic pop
 #endif
 

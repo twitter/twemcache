@@ -33,6 +33,43 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+/* Double expansion needed for stringification of macro values. */
+#define __xstr(s) __str(s)
+#define __str(s) #s
+
+#if defined(USE_TCMALLOC)
+#define MC_MALLOC_LIB       \
+    ("tcmalloc-" __xstr(TC_VERSION_MAJOR) "." __xstr(TC_VERSION_MINOR))
+#include <google/tcmalloc.h>
+#if (TC_VERSION_MAJOR == 1 && TC_VERSION_MINOR >= 6) || (TC_VERSION_MAJOR > 1)
+#define HAVE_MALLOC_SIZE 1
+#define mc_alloc_size(p) tc_malloc_size(p)
+#else
+#error "Newer version of tcmalloc required"
+#endif
+
+#elif defined(USE_JEMALLOC)
+#define MC_MALLOC_LIB       \
+    ("jemalloc-" __xstr(JEMALLOC_VERSION_MAJOR) "." __xstr(JEMALLOC_VERSION_MINOR))
+#include <jemalloc/jemalloc.h>
+#if (JEMALLOC_VERSION_MAJOR == 2 && JEMALLOC_VERSION_MINOR >= 1) ||      \
+    (JEMALLOC_VERSION_MAJOR > 2)
+#define HAVE_MALLOC_SIZE 1
+#define mc_alloc_size(p) jemalloc_usable_size(p)
+#else
+#error "Newer version of jemalloc required"
+#endif
+
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
+#define HAVE_MALLOC_SIZE 1
+#define mc_alloc_size malloc_size(p)
+#endif
+
+#ifndef MC_MALLOC_LIB
+#define MC_MALLOC_LIB "libc"
+#endif
+
 /*
  * Make data 'd' or pointer 'p', n-byte aligned, where n is a power of 2
  * of 2.
@@ -70,5 +107,19 @@ void *_mc_zalloc(size_t size, const char *name, int line);
 void *_mc_calloc(size_t nmemb, size_t size, const char *name, int line);
 void *_mc_realloc(void *ptr, size_t size, const char *name, int line);
 void _mc_free(void *ptr, const char *name, int line);
+size_t mc_malloc_used_memory(void);
+
+#if __GNUC__ >= 4 && __GNUC_MINOR__ >= 2
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+#endif
+
+void mc_libc_free(void *ptr);
+#if __GNUC__ >= 4 && __GNUC_MINOR__ >= 6
+#pragma GCC diagnostic pop
+#endif
+
+#ifndef HAVE_MALLOC_SIZE
+size_t mc_alloc_size(void *ptr);
+#endif
 
 #endif

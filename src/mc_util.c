@@ -513,7 +513,7 @@ mc_stacktrace(int skip_count)
         loga("[%d] %s", j, symbols[i]);
     }
 
-    free(symbols);
+    mc_libc_free(symbols);
 #endif
 }
 
