@@ -477,6 +477,12 @@ asc_create_suffix(struct conn *c, unsigned valid_key_iter, char **suffix)
     return MC_OK;
 }
 
+static inline void
+asc_destroy_suffix(struct conn *c, char *suffix)
+{
+    cache_free(c->thread->suffix_cache, suffix);
+}
+
 /*
  * Build the response. Each hit adds three elements to the outgoing
  * reponse vector, viz:
@@ -521,10 +527,12 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
         ASSERT(sz <= SUFFIX_SIZE);
     }
     if (sz < 0) {
+        asc_destroy_suffix(c, suffix);
         return MC_ERROR;
     }
 
     status = conn_add_iov(c, suffix, sz);
+    asc_destroy_suffix(c, suffix);
     if (status != MC_OK) {
         return status;
     }
