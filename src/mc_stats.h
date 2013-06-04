@@ -55,20 +55,29 @@
     ACTION( append_miss,        STATS_COUNTER,      "# append requests that was a miss")                    \
     ACTION( prepend,            STATS_COUNTER,      "# prepend requests")                                   \
     ACTION( prepend_miss,       STATS_COUNTER,      "# prepend requests that was a miss")                   \
+    ACTION( appendrl,           STATS_COUNTER,      "# appendrl requests")                                  \
+    ACTION( appendrl_miss,      STATS_COUNTER,      "# appendrl requests that was a miss")                  \
+    ACTION( prependrl,          STATS_COUNTER,      "# prependrl requests")                                 \
+    ACTION( prependrl_miss,     STATS_COUNTER,      "# prependrl requests that was a miss")                 \
     ACTION( delete,             STATS_COUNTER,      "# delete requests")                                    \
+    ACTION( delete_hit,         STATS_COUNTER,      "# delete requests that was a hit")                     \
     ACTION( delete_miss,        STATS_COUNTER,      "# delete requests that was a miss")                    \
     ACTION( incr,               STATS_COUNTER,      "# incr requests")                                      \
     ACTION( incr_miss,          STATS_COUNTER,      "# incr requests that was a miss")                      \
+    ACTION( incr_success,       STATS_COUNTER,      "# incr requests that was a success")                   \
     ACTION( decr,               STATS_COUNTER,      "# decr requests")                                      \
     ACTION( decr_miss,          STATS_COUNTER,      "# decr requests that was a miss")                      \
+    ACTION( decr_success,       STATS_COUNTER,      "# decr requests that was a success")                   \
     ACTION( cas,                STATS_COUNTER,      "# cas requests")                                       \
     ACTION( cas_miss,           STATS_COUNTER,      "# cas requests that was a miss")                       \
+    ACTION( cas_badval,         STATS_COUNTER,      "# cas requests that resulted in exists")               \
     ACTION( get,                STATS_COUNTER,      "# get requests")                                       \
-    ACTION( get_miss,           STATS_COUNTER,      "# get requests that was a miss")                       \
+    ACTION( get_key,            STATS_COUNTER,      "# keys by get requests")                               \
+    ACTION( get_key_miss,       STATS_COUNTER,      "# keys by get requests that was a miss")               \
     ACTION( gets,               STATS_COUNTER,      "# gets requests")                                      \
-    ACTION( gets_miss,          STATS_COUNTER,      "# gets requests that was a miss")                      \
-    ACTION( flush,              STATS_COUNTER,      "# flush requests")                                     \
-    ACTION( stats,              STATS_COUNTER,      "# stats requests")                                     \
+    ACTION( gets_key,           STATS_COUNTER,      "# keys by gets requests")                              \
+    ACTION( gets_key_miss,      STATS_COUNTER,      "# keys by gets requests that was a miss")              \
+    ACTION( cmd_total,          STATS_COUNTER,      "# total requests")                                     \
     ACTION( cmd_error,          STATS_COUNTER,      "# invalid requests")                                   \
     ACTION( server_error,       STATS_COUNTER,      "# requests that resulted in server errors")            \
     ACTION( klog_logged,        STATS_COUNTER,      "# commands logged in buffer when klog is turned on")   \
@@ -82,40 +91,30 @@
     ACTION( item_curr,          STATS_GAUGE,        "# current items")                                      \
     ACTION( item_acquire,       STATS_COUNTER,      "# items acquired (allocated or reused)")               \
     ACTION( item_remove,        STATS_COUNTER,      "# items removed")                                      \
+    ACTION( item_link,          STATS_COUNTER,      "# items linked")                                       \
+    ACTION( item_unlink,        STATS_COUNTER,      "# items unlinked")                                     \
     ACTION( item_expire,        STATS_COUNTER,      "# items expired")                                      \
     ACTION( item_evict,         STATS_COUNTER,      "# items evicted")                                      \
     ACTION( item_free,          STATS_GAUGE,        "# items in free q")                                    \
-    ACTION( item_expire_ts,     STATS_TIMESTAMP,    "last item expired timestamp")                          \
-    ACTION( item_reclaim_ts,    STATS_TIMESTAMP,    "last item reclaimed timestamp")                        \
-    ACTION( item_evict_ts,      STATS_TIMESTAMP,    "last item evicted timestamp")                          \
     ACTION( slab_req,           STATS_COUNTER,      "# slab allocation requests")                           \
     ACTION( slab_error,         STATS_COUNTER,      "# slabs allocation failures")                          \
     ACTION( slab_alloc,         STATS_COUNTER,      "# allocated slabs until now")                          \
     ACTION( slab_curr,          STATS_GAUGE,        "# current slabs")                                      \
     ACTION( slab_evict,         STATS_COUNTER,      "# slabs evicted")                                      \
-    ACTION( slab_req_ts,        STATS_TIMESTAMP,    "the last slab requested timestamp")                    \
-    ACTION( slab_error_ts,      STATS_TIMESTAMP,    "the last slab allocation failure timestamp")           \
-    ACTION( slab_alloc_ts,      STATS_TIMESTAMP,    "the last allocated slab timestamp")                    \
-    ACTION( slab_new_ts,        STATS_TIMESTAMP,    "the last newly allocated slab timestamp")              \
-    ACTION( slab_evict_ts,      STATS_TIMESTAMP,    "the last slab evicted timestamp")                      \
     ACTION( set_success,        STATS_COUNTER,      "# set requests tht was a success")                     \
     ACTION( add_success,        STATS_COUNTER,      "# add requests that was a success")                    \
-    ACTION( replace_hit,        STATS_COUNTER,      "# replace requests that was a hit")                    \
     ACTION( replace_success,    STATS_COUNTER,      "# replace requests that was a success")                \
     ACTION( append_hit,         STATS_COUNTER,      "# append requests that was a hit")                     \
     ACTION( append_success,     STATS_COUNTER,      "# append requests that was a success")                 \
     ACTION( prepend_hit,        STATS_COUNTER,      "# prepend requests that was a hit")                    \
     ACTION( prepend_success,    STATS_COUNTER,      "# prepend requests that was a success")                \
-    ACTION( delete_hit,         STATS_COUNTER,      "# delete requests that was a hit")                     \
-    ACTION( incr_hit,           STATS_COUNTER,      "# incr requests that was a hit")                       \
-    ACTION( incr_success,       STATS_COUNTER,      "# incr requests that was a success")                   \
-    ACTION( decr_hit,           STATS_COUNTER,      "# decr requests that was a hit")                       \
-    ACTION( decr_success,       STATS_COUNTER,      "# decr requests that was a success")                   \
-    ACTION( cas_badval,         STATS_COUNTER,      "# cas requests that resulted in exists")               \
-    ACTION( cas_hit,            STATS_COUNTER,      "# cas requests that was a hit")                        \
+    ACTION( appendrl_hit,       STATS_COUNTER,      "# appendrl requests that was a hit")                   \
+    ACTION( appendrl_success,   STATS_COUNTER,      "# appendrl requests that was a success")               \
+    ACTION( prependrl_hit,      STATS_COUNTER,      "# prependrl requests that was a hit")                  \
+    ACTION( prependrl_success,  STATS_COUNTER,      "# prependrl requests that was a success")              \
     ACTION( cas_success,        STATS_COUNTER,      "# cas requests that was a success")                    \
-    ACTION( get_hit,            STATS_COUNTER,      "# get requests that was a hit")                        \
-    ACTION( gets_hit,           STATS_COUNTER,      "# gets requests that was a hit")                       \
+    ACTION( get_key_hit,        STATS_COUNTER,      "# keys (by get requests) that was a hit")              \
+    ACTION( gets_key_hit,       STATS_COUNTER,      "# keys (by gets requests) that was a hit")             \
 
 #define STATS_MIN_INTVL     10000    /* min aggregation interval in usec */
 #define STATS_MAX_INTVL     60000000 /* max aggregation interval in usec */
@@ -123,7 +122,6 @@
 
 typedef enum metric_type {
     STATS_INVALID,   /* invalid or uninitialized */
-    STATS_TIMESTAMP, /* monotonic timestamp as rel_time_t (in secs) */
     STATS_COUNTER,   /* monotonic accumulator */
     STATS_GAUGE      /* non-monotonic accumulator */
 } metric_type_t;
@@ -132,7 +130,6 @@ struct stats_metric {
     metric_type_t   type;       /* type */
     char            *name;      /* display name */
     union {                     /* actual value */
-        rel_time_t  timestamp;  /* monotonic timestamp */
         int64_t     counter;    /* accumulating counter */
         struct {                /* gauge */
             int64_t t;          /* incr counter */

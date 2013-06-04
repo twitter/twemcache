@@ -95,27 +95,25 @@ STATS_KEYS = [ # system/service info
      # connection related
     'conn_disabled', 'conn_total', 'conn_struct', 'conn_yield', 'conn_curr',
      # item/slab related
-    'item_curr', 'item_free', 'item_acquire', 'item_remove', 'item_evict', 'item_expire',
+    'item_curr', 'item_free', 'item_acquire', 'item_remove', 'item_link', 'item_unlink', 'item_evict', 'item_expire',
     'slab_req', 'slab_error', 'slab_alloc', 'slab_curr', 'slab_evict',
      # things in bytes
     'data_read', 'data_written', 'data_curr', 'data_value_curr',
-     # time stamps
-    'item_expire_ts', 'item_retire_ts', 'item_evict_ts',
-    'slab_req_ts', 'slab_error_ts', 'slab_alloc_ts', 'slab_new_ts', 'slab_evict_ts',
      # command related
     'set', 'set_success',
     'add', 'add_exist', 'add_success',
-    'replace', 'replace_hit', 'replace_miss', 'replace_success',
+    'replace', 'replace_miss', 'replace_success',
     'append', 'append_hit', 'append_miss', 'append_success',
     'prepend', 'prepend_hit', 'prepend_miss', 'prepend_success',
+    'appendrl', 'appendrl_hit', 'appendrl_miss', 'appendrl_success',
+    'prependrl', 'prependrl_hit', 'prependrl_miss', 'prependrl_success',
     'delete', 'delete_hit', 'delete_miss',
-    'incr', 'incr_hit', 'incr_miss', 'incr_success',
-    'decr', 'decr_hit', 'decr_miss', 'decr_success',
-    'cas', 'cas_badval', 'cas_hit', 'cas_miss', 'cas_success',
-    'get', 'get_hit', 'get_miss',
-    'gets', 'gets_hit', 'gets_miss',
-    'flush',
-    'stats',
+    'incr', 'incr_miss', 'incr_success',
+    'decr', 'decr_miss', 'decr_success',
+    'cas', 'cas_badval', 'cas_miss', 'cas_success',
+    'get', 'get_key', 'get_key_hit', 'get_key_miss',
+    'gets', 'gets_key', 'gets_key_hit', 'gets_key_miss',
+    'cmd_total',
      # general errors
     'cmd_error', 'server_error',
     'klog_logged', 'klog_discarded', 'klog_skipped'

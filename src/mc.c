@@ -100,7 +100,7 @@
 #define MC_ACCESS_MASK      0700
 
 #define MC_EVICT            EVICT_RS
-#define MC_EVICT_STR        "random"
+#define MC_EVICT_STR        "random slab"
 #define MC_FACTOR           1.25
 #define MC_MAXBYTES         (64 * MB)
 
@@ -163,12 +163,13 @@ static char short_options[] =
     "o:" /* output logfile */
     "v:" /* log verbosity level */
     "A:" /* stats aggregation interval in msec */
-    "x:" /* command logging entry number */
-    "X:" /* command logging file */
-    "y:" /* command logging sample rate */
+    "e:" /* hash power */
     "t:" /* # of threads */
     "P:" /* pid file */
     "u:" /* user identity to run as */
+    "x:" /* command logging entry number */
+    "X:" /* command logging file */
+    "y:" /* command logging sample rate */
     "R:" /* max request per event */
     "c:" /* max simultaneous connections */
     "b:" /* tcp backlog queue limit */
@@ -189,79 +190,99 @@ static void
 mc_show_usage(void)
 {
     log_stderr(
-        "Usage: twemcache [-?hVCELdkrDS] [-o output file] [-v verbosity level]" CRLF
-        "           [-A stats aggr interval] [-e hash power]" CRLF
-        "           [-t threads] [-P pid file] [-u user]" CRLF
-        "           [-x command logging entry] [-X command logging file] [-y command logging sample rate]" CRLF
-        "           [-R max requests] [-c max conns] [-b backlog] [-p port] [-U udp port]" CRLF
-        "           [-l interface] [-s unix path] [-a access mask] [-M eviction strategy]" CRLF
-        "           [-f factor] [-m max memory] [-n min item chunk size] [-I slab size]" CRLF
-        "           [-z slab profile]" CRLF
+        "Usage:" CRLF
+        "twemcache [-?hVCELdkrDS]" CRLF
+        "          [-o output file] [-v verbosity level]" CRLF
+        "          [-A stats aggr interval] [-t threads] [-P pid file] [-u user]" CRLF
+        "          [-e hash power] [-M eviction strategy]" CRLF
+        "          [-x command log entry] [-X command log file] [-y command log sample rate]" CRLF
+        "          [-p port] [-U udp port] [-R max requests] [-c max conns] [-b backlog]" CRLF
+        "          [-l interface] [-s unix path] [-a access mask]" CRLF
+        "          [-m max memory] [-f factor] [-n min item chunk size] [-I slab size]" CRLF
+        "          [-z slab profile]"
         "");
     log_stderr(
         "Options:" CRLF
-        "  -h, --help                  : this help" CRLF
-        "  -V, --version               : show version and exit" CRLF
-        "  -E, --prealloc              : preallocate memory for all slabs" CRLF
-        "  -L, --use-large-pages       : use large pages if available" CRLF
-        "  -k, --lock-pages            : lock all pages and preallocate slab memory" CRLF
-        "  -d, --daemonize             : run as a daemon" CRLF
-        "  -r, --maximize-core-limit   : maximize core file limit" CRLF
-        "  -C, --disable-cas           : disable use of cas" CRLF
-        "  -D, --describe-stats        : print stats description and exit" CRLF
-        "  -S, --show-sizes            : print slab and item struct sizes and exit"
-        " ");
+        "  -h, --help                  show twemcache version, usage, options, and exit" CRLF
+        "  -V, --version               show version and exit" CRLF
+        "  -E, --prealloc              preallocate memory for all slabs" CRLF
+        "  -L, --use-large-pages       use large pages if available" CRLF
+        "  -k, --lock-pages            preallocate all slab memory and lock the pages" CRLF
+        "  -d, --daemonize             run twemcache as a daemon" CRLF
+        "  -r, --maximize-core-limit   maximize core file limit" CRLF
+        "  -C, --disable-cas           disable cas field in an item, this saves 8 bytes" CRLF
+        "                              per item, but cas/gets commands will not work" CRLF
+        "  -D, --describe-stats        show version, name and description of each stats" CRLF
+        "                              metric, and exit" CRLF
+        "  -S, --show-sizes            show version, item overhead, minimum item size," CRLF
+        "                              slab overhead, default slab size, and exit"
+        "");
 
     log_stderr(
-        "  -o, --output=S              : set the logging file (default: %s)" CRLF
-        "  -v, --verbosity=N           : set the logging level (default: %d, min: %d, max: %d)" CRLF
-        "  -A, --stats-aggr-interval=N : set the stats aggregation interval in usec (default: %d usec)" CRLF
-        "  -e, --hash-power=N          : set the hash table size as a power of 2 (default: 0, adjustable)" CRLF
-        "  -t, --threads=N             : set number of threads to use (default: %d)" CRLF
-        "  -P, --pidfile=S             : set the pid file (default: %s)" CRLF
-        "  -u, --user=S                : set user identity when run as root (default: %s)"
-        " ",
-        MC_LOG_FILE != NULL ? MC_LOG_FILE : "stderr", MC_LOG_DEFAULT, MC_LOG_MIN, MC_LOG_MAX,
+        "  -o, --output=S              set the debug logging file (default: %s)" CRLF
+        "  -v, --verbosity=N           set the debug logging level (default: %d," CRLF
+        "                              min: %d, max: %d)" CRLF
+        "  -A, --stats-aggr-interval=N aggregate stats every N usec (default: %d)" CRLF
+        "                              to get a snapshot used by `stats' commands" CRLF
+        "  -e, --hash-power=N          create a fixed sized hash table, number of" CRLF
+        "                              entries as power of 2 (default: 0, i.e. dynamic)" CRLF
+        "  -t, --threads=N             set the number of worker threads (default: %d)" CRLF
+        "  -P, --pidfile=S             store pid in a file (default: %s)" CRLF
+        "  -u, --user=S                user identity to run twemcache as, set this" CRLF
+        "                              option if and only if run twemcache as root"
+        "",
+        MC_LOG_FILE != NULL ? MC_LOG_FILE : "stderr",
+        MC_LOG_DEFAULT, MC_LOG_MIN, MC_LOG_MAX,
         MC_STATS_INTVL,
         MC_WORKERS,
-        MC_PID_FILE != NULL ? MC_PID_FILE : "off",
-        MC_USER != NULL ? MC_USER : "off"
+        MC_PID_FILE != NULL ? MC_PID_FILE : "not stored"
         );
 
     log_stderr(
-        "  -x, --klog-entry=N          : set the command logging entry number per thread (default: %d)" CRLF
-        "  -X, --klog-file=S           : set the command logging file (default: %s)" CRLF
-        "  -y, --klog-sample-rate=N    : set the command logging sample rate (default: %d)"
-        " ",
+        "  -x, --klog-entry=N          size the thread-local command log buffer to hold" CRLF
+        "                              at least this many entires (default: %d)" CRLF
+        "  -X, --klog-file=S           log commands to file S (default: %s)" CRLF
+        "  -y, --klog-sample-rate=N    set the command logging to sample one in every N" CRLF
+        "                              commands (default: %d)"
+        "",
         MC_KLOG_ENTRY,
-        MC_KLOG_FILE != NULL ? MC_KLOG_FILE : "off",
+        MC_KLOG_FILE != NULL ? MC_KLOG_FILE : "disabled",
         MC_KLOG_SMP_RATE
         );
 
     log_stderr(
-        "  -R, --max-requests=N        : set the maximum number of requests per event (default: %d)" CRLF
-        "  -c, --max-conns=N           : set the maximum simultaneous connections (default: %d)" CRLF
-        "  -b, --backlog=N             : set the backlog queue limit (default %d)" CRLF
-        "  -p, --port=N                : set the tcp port to listen on (default: %d)" CRLF
-        "  -U, --udp-port=N            : set the udp port to listen on (default: %d)" CRLF
-        "  -l, --interface=S           : set the interface to listen on (default: %s)" CRLF
-        "  -s, --unix-path=S           : set the unix socket path to listen on (default: %s)" CRLF
-        "  -a, --access-mask=O         : set the access mask for unix socket in octal (default: %04o)"
-        " ",
+        "  -R, --max-requests=N        set the maximum number of requests per event" CRLF
+        "                              (default: %d)" CRLF
+        "  -c, --max-conns=N           maximum open connections (default: %d)" CRLF
+        "  -b, --backlog=N             the backlog argument of listen() applied to the" CRLF
+        "                              listening socket (default %d)" CRLF
+        "  -p, --port=N                set the tcp port to listen on (default: %d)" CRLF
+        "  -U, --udp-port=N            set the udp port to listen on (default: %d)" CRLF
+        "  -l, --interface=S           interface to listen on (default: %s)" CRLF
+        "  -s, --unix-path=S           set unix socket file path (default: %s)" CRLF
+        "  -a, --access-mask=O         access mask of the unix socket file in octal" CRLF
+        "                              (default: %04o)"
+        "",
         MC_REQ_PER_EVENT, MC_MAX_CONNS, MC_BACKLOG,
         MC_TCP_PORT, MC_UDP_PORT,
-        MC_INTERFACE != NULL ? MC_INTERFACE : "all",
-        MC_UNIX_PATH != NULL ? MC_UNIX_PATH : "off", MC_ACCESS_MASK
+        MC_INTERFACE != NULL ? MC_INTERFACE : "all interfaces",
+        MC_UNIX_PATH != NULL ? MC_UNIX_PATH : "disabled", MC_ACCESS_MASK
         );
 
     log_stderr(
-        "  -M, --eviction-strategy=N   : set the eviction strategy on OOM (default: %d, %s)" CRLF
-        "  -f, --factor=D              : set the growth factor of slab item sizes (default: %g)" CRLF
-        "  -m, --max-memory=N          : set the maximum memory to use for all items in MB (default: %d MB)" CRLF
-        "  -n, --min-item-chunk-size=N : set the minimum item chunk size in bytes (default: %d bytes)" CRLF
-        "  -I, --slab-size=N           : set slab size in bytes (default: %d bytes)" CRLF
-        "  -z, --slab-profile=S        : set the profile of slab item chunk sizes (default: off)" CRLF
-        " ",
+        "  -M, --eviction-strategy=N   use eviction strategy N when running out of free" CRLF
+        "                              memory for items (default: %d, i.e. %s)" CRLF
+        "  -f, --factor=D              set the exponential growth factor in deciding" CRLF
+        "                              item chunk size for each slab class" CRLF
+        "                              (default: %g)" CRLF
+        "  -m, --max-memory=N          set the maximum memory allocated to slabs, in MB" CRLF
+        "                              (default: %d)" CRLF
+        "  -n, --min-item-chunk-size=N set the minimum item chunk size, in bytes" CRLF
+        "                              (default: %d)" CRLF
+        "  -I, --slab-size=N           slab size, in bytes (default: %d)" CRLF
+        "  -z, --slab-profile=S        specify all item chunk sizes to be supported," CRLF
+        "                              e.g. -z 128,256,1024,8192 (default: off)" CRLF
+        "",
         MC_EVICT, MC_EVICT_STR,
         MC_FACTOR, MC_MAXBYTES / MB,
         MC_CHUNK_SIZE,

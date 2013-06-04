@@ -159,7 +159,9 @@ item_hdr_init(struct item *it, uint32_t offset, uint8_t id)
 {
     ASSERT(offset >= SLAB_HDR_SIZE && offset < settings.slab_size);
 
+#if MC_ASSERT_PANIC == 1 || MC_ASSERT_LOG == 1
     it->magic = ITEM_MAGIC;
+#endif
     it->offset = offset;
     it->id = id;
     it->refcount = 0;
@@ -243,9 +245,6 @@ item_reuse(struct item *it)
 
     assoc_delete(item_key(it), it->nkey);
     item_unlink_q(it);
-
-    stats_slab_incr(it->id, item_remove);
-    stats_slab_settime(it->id, item_reclaim_ts, time_now());
 
     log_debug(LOG_VERB, "reuse %s it '%.*s' at offset %"PRIu32" with id "
               "%"PRIu8"", item_expired(it) ? "expired" : "evicted",
@@ -346,10 +345,9 @@ _item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t
     if (it != NULL && item_expired(it)) {
         /* 1) this is an expired item, always use it */
         stats_slab_incr(id, item_expire);
-        stats_slab_settime(id, item_expire_ts, it->exptime);
 
         item_reuse(it);
-        goto done;
+        goto alloc_done;
     }
 
     uit = (settings.evict_opt & EVICT_LRU)? it : NULL; /* keep if can be used */
@@ -357,17 +355,16 @@ _item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t
     it = slab_get_item(id);
     if (it != NULL) {
         /* 2) or 3) either we allow random eviction a free item is found */
-        goto done;
+        goto alloc_done;
     }
 
     if (uit != NULL) {
         /* 4) this is an lru item and we can reuse it */
         it = uit;
         stats_slab_incr(id, item_evict);
-        stats_slab_settime(id, item_evict_ts, time_now());
 
         item_reuse(it);
-        goto done;
+        goto alloc_done;
     }
 
     log_warn("server error on allocating item in slab %"PRIu8, id);
@@ -376,7 +373,7 @@ _item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags, rel_time_t
 
     return NULL;
 
-done:
+alloc_done:
 
     ASSERT(it->id == id);
     ASSERT(!item_is_linked(it));
@@ -395,6 +392,7 @@ done:
     memset(it->end, 0xff, slab_item_size(it->id) - ITEM_HDR_SIZE);
 #endif
     memcpy(item_key(it), key, nkey);
+    item_set_cas(it, 0);
 
     stats_slab_incr(id, item_acquire);
 
@@ -444,6 +442,8 @@ _item_link(struct item *it)
 
     assoc_insert(it);
     item_link_q(it, true);
+
+    stats_slab_incr(it->id, item_link);
 }
 
 /*
@@ -454,7 +454,6 @@ static void
 _item_unlink(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
-    ASSERT(item_is_linked(it));
 
     log_debug(LOG_DEBUG, "unlink it '%.*s' at offset %"PRIu32" with flags "
               "%02x id %"PRId8"", it->nkey, item_key(it), it->offset,
@@ -463,6 +462,7 @@ _item_unlink(struct item *it)
     if (item_is_linked(it)) {
         it->flags &= ~ITEM_LINKED;
 
+        stats_slab_incr(it->id, item_unlink);
         assoc_delete(item_key(it), it->nkey);
 
         item_unlink_q(it);
@@ -500,18 +500,6 @@ void
 item_remove(struct item *it)
 {
     pthread_mutex_lock(&cache_lock);
-    _item_remove(it);
-    pthread_mutex_unlock(&cache_lock);
-}
-
-/*
- * Unlink an item and remove it (if its recount drops to zero).
- */
-void
-item_delete(struct item *it)
-{
-    pthread_mutex_lock(&cache_lock);
-    _item_unlink(it);
     _item_remove(it);
     pthread_mutex_unlock(&cache_lock);
 }
@@ -556,7 +544,7 @@ item_touch(struct item *it)
  * Replace one item with another in the hash table and lru q.
  */
 static void
-_item_replace(struct item *it, struct item *nit)
+_item_relink(struct item *it, struct item *nit)
 {
     ASSERT(it->magic == ITEM_MAGIC);
     ASSERT(!item_is_slabbed(it));
@@ -564,7 +552,7 @@ _item_replace(struct item *it, struct item *nit)
     ASSERT(nit->magic == ITEM_MAGIC);
     ASSERT(!item_is_slabbed(nit));
 
-    log_debug(LOG_VERB, "replace it '%.*s' at offset %"PRIu32" id %"PRIu8" "
+    log_debug(LOG_VERB, "relink it '%.*s' at offset %"PRIu32" id %"PRIu8" "
               "with one at offset %"PRIu32" id %"PRIu8"", it->nkey,
               item_key(it), it->offset, it->id, nit->offset, nit->id);
 
@@ -652,8 +640,6 @@ _item_get(const char *key, size_t nkey)
     if (it->exptime != 0 && it->exptime <= time_now()) {
         _item_unlink(it);
         stats_slab_incr(it->id, item_expire);
-        stats_slab_settime(it->id, item_reclaim_ts, time_now());
-        stats_slab_settime(it->id, item_expire_ts, it->exptime);
         log_debug(LOG_VERB, "get it '%.*s' expired and nuked", nkey, key);
         return NULL;
     }
@@ -662,7 +648,6 @@ _item_get(const char *key, size_t nkey)
         it->atime <= settings.oldest_live) {
         _item_unlink(it);
         stats_slab_incr(it->id, item_evict);
-        stats_slab_settime(it->id, item_evict_ts, time_now() );
         log_debug(LOG_VERB, "it '%.*s' nuked", nkey, key);
         return NULL;
     }
@@ -722,7 +707,6 @@ _item_flush_expired(void)
             _item_unlink(it);
 
             stats_slab_incr(it->id, item_evict);
-            stats_slab_settime(it->id, item_evict_ts, time_now());
         }
     }
 }
@@ -735,208 +719,259 @@ item_flush_expired(void)
     pthread_mutex_unlock(&cache_lock);
 }
 
-/*
- * Store an item in the cache according to the semantics of one of the
- * update commands - {set, add, replace, append, prepend, cas}
- */
-static item_store_result_t
-_item_store(struct item *it, req_type_t type, struct conn *c)
+static void
+_item_set(struct conn *c)
 {
-    item_store_result_t result;  /* item store result */
-    bool store_it;               /* store item ? */
-    char *key;                   /* item key */
-    struct item *oit, *nit;      /* old (existing) item & new item */
-    uint8_t id;                  /* slab id */
-    uint32_t total_nbyte;
+    char *key;
+    struct item *it, *oit;
 
-    result = NOT_STORED;
-    store_it = true;
-
+    it = c->item;
     key = item_key(it);
-    nit = NULL;
     oit = _item_get(key, it->nkey);
     if (oit == NULL) {
-        switch (type) {
-        case REQ_SET:
-            stats_slab_incr(it->id, set_success);
-            break;
-
-        case REQ_ADD:
-            stats_slab_incr(it->id, add_success);
-            break;
-
-        case REQ_REPLACE:
-            stats_thread_incr(replace_miss);
-            store_it = false;
-            break;
-
-        case REQ_APPEND:
-            stats_thread_incr(append_miss);
-            store_it = false;
-            break;
-
-        case REQ_PREPEND:
-            stats_thread_incr(prepend_miss);
-            store_it = false;
-            break;
-
-        case REQ_CAS:
-            stats_thread_incr(cas_miss);
-            result = NOT_FOUND;
-            store_it = false;
-            break;
-
-        default:
-            NOT_REACHED();
-        }
+        _item_link(it);
     } else {
-        switch (type) {
-        case REQ_SET:
-            stats_slab_incr(it->id, set_success);
-            break;
-
-        case REQ_ADD:
-            stats_thread_incr(add_exist);
-            /*
-             * Add only adds a non existing item. However we promote the
-             * existing item to head of the lru q
-             */
-            _item_touch(oit);
-            store_it = false;
-            break;
-
-        case REQ_REPLACE:
-            stats_slab_incr(oit->id, replace_hit);
-            stats_slab_incr(it->id, replace_success);
-            break;
-
-        case REQ_APPEND:
-            stats_slab_incr(oit->id, append_hit);
-
-            total_nbyte = oit->nbyte + it->nbyte;
-            id = item_slabid(oit->nkey, total_nbyte);
-            if (id == SLABCLASS_INVALID_ID) {
-                /* FIXME: logging client error but not sending CLIENT ERROR
-                 * to the client because we are inside the item module, which
-                 * technically shouldn't directly handle commands. There is not
-                 * a proper return status to indicate such an error.
-                 * This can only be fixed by moving the command-aware logic
-                 * into a separate module.
-                 */
-                log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
-                          " with key size %"PRIu8" and value size %"PRIu32,
-                          c->sd, c->req_type, oit->nkey, total_nbyte);
-
-                stats_thread_incr(cmd_error);
-                store_it = false;
-                break;
-            }
-
-            /* if oit is large enough to hold the extra data and left-aligned,
-             * which is the default behavior, we copy the delta to the end of
-             * the existing data. Otherwise, allocate a new item and store the
-             * payload left-aligned.
-             */
-            if (id == oit->id && !item_is_raligned(oit)) {
-                memcpy(item_data(oit) + oit->nbyte, item_data(it), it->nbyte);
-                oit->nbyte = total_nbyte;
-                it = oit;
-                item_set_cas(it, item_next_cas());
-                store_it = false;
-            } else {
-                nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
-                                  oit->exptime, total_nbyte);
-                if (nit == NULL) {
-                    store_it = false;
-                    break;
-                }
-
-                memcpy(item_data(nit), item_data(oit), oit->nbyte);
-                memcpy(item_data(nit) + oit->nbyte, item_data(it), it->nbyte);
-                it = nit;
-            }
-
-            stats_slab_incr(it->id, append_success);
-            break;
-
-        case REQ_PREPEND:
-            stats_slab_incr(oit->id, prepend_hit);
-
-            /*
-             * Alloc new item - nit to hold both it and oit
-             */
-            total_nbyte = oit->nbyte + it->nbyte;
-            id = item_slabid(oit->nkey, total_nbyte);
-            if (id == SLABCLASS_INVALID_ID) {
-                log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
-                          " with key size %"PRIu8" and value size %"PRIu32,
-                          c->sd, c->req_type, oit->nkey, total_nbyte);
-
-                stats_thread_incr(cmd_error);
-                store_it = false;
-                break;
-            }
-            /* if oit is large enough to hold the extra data and is already
-             * right-aligned, we copy the delta to the front of the existing
-             * data. Otherwise, allocate a new item and store the payload
-             * right-aligned, assuming more prepends will happen in the future.
-             */
-            if (id == oit->id && item_is_raligned(oit)) {
-                memcpy(item_data(oit) - it->nbyte, item_data(it), it->nbyte);
-                oit->nbyte = total_nbyte;
-                it = oit;
-                item_set_cas(it, item_next_cas());
-                store_it = false;
-            } else {
-                nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
-                                  oit->exptime, total_nbyte);
-                if (nit == NULL) {
-                    store_it = false;
-                    break;
-                }
-
-                nit->flags |= ITEM_RALIGN;
-                memcpy(item_data(nit), item_data(it), it->nbyte);
-                memcpy(item_data(nit) + it->nbyte, item_data(oit), oit->nbyte);
-                it = nit;
-            }
-
-            stats_slab_incr(it->id, prepend_success);
-            break;
-
-        case REQ_CAS:
-            if (item_cas(it) != item_cas(oit)) {
-                log_debug(LOG_DEBUG, "cas mismatch %"PRIu64" != %"PRIu64 "on "
-                          "it '%.*s'", item_cas(oit), item_cas(it), it->nkey,
-                          item_key(it));
-                stats_slab_incr(oit->id, cas_badval);
-                result = EXISTS;
-                break;
-            }
-
-            stats_slab_incr(oit->id, cas_hit);
-            stats_slab_incr(it->id, cas_success);
-            break;
-
-        default:
-            NOT_REACHED();
-        }
+        _item_relink(oit, it);
+        _item_remove(oit);
     }
 
-    if (result == NOT_STORED && store_it) {
-        if (oit != NULL) {
-            _item_replace(oit, it);
-        } else {
-            _item_link(it);
-        }
-        result = STORED;
+    log_debug(LOG_VERB, "store it '%.*s'at offset %"PRIu32" with flags %02x"
+              " id %"PRId8"", it->nkey, item_key(it), it->offset, it->flags,
+              it->id);
+}
 
-        log_debug(LOG_VERB, "store it '%.*s'at offset %"PRIu32" with flags %02x"
+void
+item_set(struct conn *c)
+{
+    pthread_mutex_lock(&cache_lock);
+    _item_set(c);
+    pthread_mutex_unlock(&cache_lock);
+}
+
+static item_cas_result_t
+_item_cas(struct conn *c)
+{
+    item_cas_result_t ret;
+    char *key;
+    struct item *it, *oit;
+
+    it = c->item;
+    key = item_key(it);
+    oit = _item_get(key, it->nkey);
+    if (oit == NULL) {
+        ret = CAS_NOT_FOUND;
+
+        goto cas_done;
+    }
+
+    if (item_get_cas(it) != item_get_cas(oit)) {
+        log_debug(LOG_DEBUG, "cas mismatch %"PRIu64" != %"PRIu64 "on "
+                  "it '%.*s'", item_get_cas(oit), item_get_cas(it), it->nkey,
+                  item_key(it));
+
+        ret = CAS_EXISTS;
+
+        goto cas_done;
+    }
+
+    _item_relink(oit, it);
+    ret = CAS_OK;
+
+    log_debug(LOG_VERB, "cas it '%.*s'at offset %"PRIu32" with flags %02x"
+              " id %"PRId8"", it->nkey, item_key(it), it->offset, it->flags,
+              it->id);
+
+cas_done:
+    if (oit != NULL) {
+        _item_remove(oit);
+    }
+
+    return ret;
+}
+
+item_cas_result_t
+item_cas(struct conn *c)
+{
+    item_cas_result_t ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = _item_cas(c);
+    pthread_mutex_unlock(&cache_lock);
+
+    return ret;
+}
+
+static item_add_result_t
+_item_add(struct conn *c)
+{
+    item_add_result_t ret;
+    char *key;
+    struct item *it, *oit;
+
+    it = c->item;
+    key = item_key(it);
+    oit = _item_get(key, it->nkey);
+    if (oit != NULL) {
+        _item_remove(oit);
+
+        ret = ADD_EXISTS;
+    } else {
+        _item_link(it);
+
+        ret = ADD_OK;
+
+        log_debug(LOG_VERB, "add it '%.*s'at offset %"PRIu32" with flags %02x"
                   " id %"PRId8"", it->nkey, item_key(it), it->offset, it->flags,
                   it->id);
     }
 
-    /* release our reference, if any */
+    return ret;
+}
+
+item_add_result_t
+item_add(struct conn *c)
+{
+    item_add_result_t ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = _item_add(c);
+    pthread_mutex_unlock(&cache_lock);
+
+    return ret;
+}
+
+static item_replace_result_t
+_item_replace(struct conn *c)
+{
+    item_replace_result_t ret;
+    char *key;
+    struct item *it, *oit;
+
+    it = c->item;
+    key = item_key(it);
+    oit = _item_get(key, it->nkey);
+    if (oit == NULL) {
+        ret = REPLACE_NOT_FOUND;
+    } else {
+        log_debug(LOG_VERB, "replace oit '%.*s'at offset %"PRIu32" with flags %02x"
+                  " id %"PRId8"", oit->nkey, item_key(oit), oit->offset, oit->flags,
+                  oit->id);
+
+        _item_relink(oit, it);
+        _item_remove(oit);
+
+        ret = REPLACE_OK;
+    }
+
+    return ret;
+}
+
+item_replace_result_t
+item_replace(struct conn *c)
+{
+    item_replace_result_t ret;
+
+    pthread_mutex_lock(&cache_lock);
+    ret = _item_replace(c);
+    pthread_mutex_unlock(&cache_lock);
+
+    return ret;
+}
+
+/* returns the nit if append is successful, or the original it if oversized */
+static item_annex_result_t
+_item_annex(uint32_t *nbyte, uint8_t *oid, uint8_t *nid, struct conn *c)
+{
+    item_annex_result_t ret;
+    char *key;
+    struct item *it, *oit, *nit;
+    uint8_t id;
+    uint32_t total_nbyte;
+
+    ret = ANNEX_OK;
+
+    it = c->item;
+    key = item_key(it);
+    oit = _item_get(key, it->nkey);
+    nit = NULL;
+    if (oit == NULL) {
+        ret = ANNEX_NOT_FOUND;
+
+        goto annex_done;
+    }
+
+    total_nbyte = oit->nbyte + it->nbyte;
+    id = item_slabid(oit->nkey, total_nbyte);
+    *oid = oit->id;
+    *nid = id;
+    if (id == SLABCLASS_INVALID_ID) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
+                  " with key size %"PRIu8" and value size %"PRIu32,
+                  c->sd, c->req_type, oit->nkey, total_nbyte);
+        ret = ANNEX_OVERSIZED;
+
+        goto annex_done;
+    }
+
+    log_debug(LOG_VERB, "annex to oit '%.*s'at offset %"PRIu32" with flags %02x"
+              " id %"PRId8"", oit->nkey, item_key(oit), oit->offset, oit->flags,
+              oit->id);
+
+    if (c->req_type == REQ_APPEND || c->req_type == REQ_APPENDRL) {
+        /* if oit is large enough to hold the extra data and left-aligned,
+         * which is the default behavior, we copy the delta to the end of
+         * the existing data. Otherwise, allocate a new item and store the
+         * payload left-aligned.
+         */
+        if (id == oit->id && !item_is_raligned(oit)) {
+            memcpy(item_data(oit) + oit->nbyte, item_data(it), it->nbyte);
+            oit->nbyte = total_nbyte;
+            item_set_cas(oit, item_next_cas());
+        } else {
+            nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
+                              oit->exptime, total_nbyte);
+            if (nit == NULL) {
+                ret = ANNEX_EOM;
+
+                goto annex_done;
+            }
+
+            memcpy(item_data(nit), item_data(oit), oit->nbyte);
+            memcpy(item_data(nit) + oit->nbyte, item_data(it), it->nbyte);
+            _item_relink(oit, nit);
+        }
+    } else {
+        /* if oit is large enough to hold the extra data and is already
+         * right-aligned, we copy the delta to the front of the existing
+         * data. Otherwise, allocate a new item and store the payload
+         * right-aligned, assuming more prepends will happen in the future.
+         */
+        if (id == oit->id && item_is_raligned(oit)) {
+            memcpy(item_data(oit) - it->nbyte, item_data(it), it->nbyte);
+            oit->nbyte = total_nbyte;
+            item_set_cas(oit, item_next_cas());
+        } else {
+            nit = _item_alloc(id, key, oit->nkey, oit->dataflags,
+                              oit->exptime, total_nbyte);
+            if (nit == NULL) {
+                ret = ANNEX_EOM;
+
+                goto annex_done;
+            }
+
+            nit->flags |= ITEM_RALIGN;
+            memcpy(item_data(nit), item_data(it), it->nbyte);
+            memcpy(item_data(nit) + it->nbyte, item_data(oit), oit->nbyte);
+            _item_relink(oit, nit);
+        }
+    }
+    *nbyte = total_nbyte;
+
+    log_debug(LOG_VERB, "annex successfully to it'%.*s', new id"PRId8,
+              oit->nkey, item_key(oit), id);
+
+
+annex_done:
     if (oit != NULL) {
         _item_remove(oit);
     }
@@ -945,116 +980,121 @@ _item_store(struct item *it, req_type_t type, struct conn *c)
         _item_remove(nit);
     }
 
-    return result;
+    return ret;
 }
 
-item_store_result_t
-item_store(struct item *it, req_type_t type, struct conn *c)
+item_annex_result_t
+item_annex(uint32_t *nbyte, uint8_t *oid, uint8_t *nid, struct conn *c)
 {
-    item_store_result_t ret;
-
+    item_annex_result_t ret;
     pthread_mutex_lock(&cache_lock);
-    ret = _item_store(it, type, c);
+    ret = _item_annex(nbyte, oid, nid, c);
     pthread_mutex_unlock(&cache_lock);
 
     return ret;
 }
 
 /*
- * Add a delta value (positive or negative) to an item.
+ * Apply a delta value (positive or negative) to an item.
  */
 static item_delta_result_t
-_item_add_delta(struct conn *c, char *key, size_t nkey, bool incr,
-                int64_t delta, char *buf)
+_item_delta(uint64_t *value, char *key, size_t nkey, bool incr, uint64_t delta)
 {
+    item_delta_result_t ret = DELTA_OK;
     int res;
     char *ptr;
-    uint64_t value;
     struct item *it;
+    char buf[INCR_MAX_STORAGE_LEN];
 
     it = _item_get(key, nkey);
     if (it == NULL) {
         return DELTA_NOT_FOUND;
+
+        goto delta_done;
     }
 
     ptr = item_data(it);
 
-    if (!mc_strtoull_len(ptr, &value, it->nbyte)) {
-        _item_remove(it);
-        return DELTA_NON_NUMERIC;
+    if (!mc_strtoull_len(ptr, value, it->nbyte)) {
+        ret = DELTA_NON_NUMERIC;
+
+        goto delta_done;
     }
 
     if (incr) {
-        value += delta;
-    } else if (delta > value) {
-        value = 0;
+        *value += delta;
+    } else if (delta > *value) {
+        *value = 0;
     } else {
-        value -= delta;
+        *value -= delta;
     }
 
-    if (incr) {
-        stats_slab_incr(it->id, incr_hit);
-    } else {
-        stats_slab_incr(it->id, decr_hit);
-    }
-
-    res = snprintf(buf, INCR_MAX_STORAGE_LEN, "%"PRIu64, value);
+    res = snprintf(buf, INCR_MAX_STORAGE_LEN, "%"PRIu64, *value);
     ASSERT(res < INCR_MAX_STORAGE_LEN);
     if (res > it->nbyte) { /* need to realloc */
         struct item *new_it;
         uint8_t id;
 
         id = item_slabid(it->nkey, res);
-        if (id == SLABCLASS_INVALID_ID) {
-            log_debug(LOG_NOTICE, "client error on c %d for req of type %d"
-            " with key size %"PRIu8" and value size %"PRIu32, c->sd,
-            c->req_type, it->nkey, res);
-        }
+        ASSERT(id != SLABCLASS_INVALID_ID);
 
         new_it = _item_alloc(id, item_key(it), it->nkey, it->dataflags,
                              it->exptime, res);
         if (new_it == NULL) {
-            _item_remove(it);
-            return DELTA_EOM;
-        }
-        if (incr) {
-            stats_slab_incr(new_it->id, incr_success);
-        } else {
-            stats_slab_incr(new_it->id, decr_success);
+            ret = DELTA_EOM;
+            goto delta_done;
         }
 
         memcpy(item_data(new_it), buf, res);
-        _item_replace(it, new_it);
-        _item_remove(new_it);
+        _item_relink(it, new_it);
+        _item_remove(it);
+        it = new_it;
     } else {
         /*
          * Replace in-place - when changing the value without replacing
          * the item, we need to update the CAS on the existing item
          */
-        if (incr) {
-            stats_slab_incr(it->id, incr_success);
-        } else {
-            stats_slab_incr(it->id, decr_success);
-        }
-
         item_set_cas(it, item_next_cas());
         memcpy(item_data(it), buf, res);
         it->nbyte = res;
     }
 
+delta_done:
+
     _item_remove(it);
 
-    return DELTA_OK;
+    return ret;
 }
 
 item_delta_result_t
-item_add_delta(struct conn *c, char *key, size_t nkey, int incr,
-               int64_t delta, char *buf)
+item_delta(uint64_t *value, char *key, size_t nkey, bool incr, uint64_t delta)
 {
     item_delta_result_t ret;
 
     pthread_mutex_lock(&cache_lock);
-    ret = _item_add_delta(c, key, nkey, incr, delta, buf);
+    ret = _item_delta(value, key, nkey, incr, delta);
+    pthread_mutex_unlock(&cache_lock);
+
+    return ret;
+}
+
+/*
+ * Unlink an item and remove it (if its recount drops to zero).
+ */
+item_delete_result_t
+item_delete(char *key, size_t nkey)
+{
+    item_delete_result_t ret = DELETE_OK;
+    struct item *it;
+
+    pthread_mutex_lock(&cache_lock);
+    it = _item_get(key, nkey);
+    if (it != NULL) {
+        _item_unlink(it);
+        _item_remove(it);
+    } else {
+        ret = DELETE_NOT_FOUND;
+    }
     pthread_mutex_unlock(&cache_lock);
 
     return ret;

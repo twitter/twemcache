@@ -138,10 +138,6 @@ static void
 stats_metric_init(struct stats_metric *metric)
 {
     switch (metric->type) {
-    case STATS_TIMESTAMP:
-        metric->value.timestamp = 0;
-        break;
-
     case STATS_COUNTER:
         metric->value.counter = 0LL;
         break;
@@ -223,22 +219,6 @@ _stats_thread_decr_by(stats_tmetric_t name, int64_t delta)
 }
 
 void
-_stats_slab_settime(uint8_t cls_id, stats_smetric_t name, rel_time_t val)
-{
-    pthread_mutex_t *stats_mutex = thread_get(keys.stats_mutex);
-    struct stats_metric **stats_slabs = thread_get(keys.stats_slabs);
-    struct stats_metric *metric = &stats_slabs[cls_id][name];
-
-    ASSERT(metric != NULL);
-    ASSERT(cls_id >= SLABCLASS_MIN_ID && cls_id <= slabclass_max_id);
-    ASSERT(metric->type == STATS_TIMESTAMP);
-
-    pthread_mutex_lock(stats_mutex);
-    metric->value.timestamp = val;
-    pthread_mutex_unlock(stats_mutex);
-}
-
-void
 _stats_slab_incr(uint8_t cls_id, stats_smetric_t name)
 {
     _stats_slab_incr_by(cls_id, name, 1);
@@ -270,6 +250,7 @@ _stats_slab_incr_by(uint8_t cls_id, stats_smetric_t name, int64_t delta)
 
     default:
         NOT_REACHED();
+        break;
     }
 
     pthread_mutex_unlock(stats_mutex);
@@ -315,14 +296,6 @@ stats_metric_val(struct stats_metric *metric)
         delta = metric->value.gauge.t - metric->value.gauge.b;
         return delta >= 0 ? delta : 0;
 
-    case STATS_TIMESTAMP:
-        if (metric->value.timestamp > 0) {
-            return (int64_t)time_now() - metric->value.timestamp;
-        } else {
-            /* time_now() always positive, 0 means ts hasn't been updated */
-            return -1;
-        }
-
     default:
         NOT_REACHED();
         return -1;
@@ -342,24 +315,18 @@ stats_metric_update(struct stats_metric *metric1,
     ASSERT(metric1->type == metric2->type);
 
     switch (metric1->type) {
-    case STATS_TIMESTAMP:
-        if (metric1->value.timestamp < metric2->value.timestamp) {
-            /* newer timestamp wins */
-            metric1->value.timestamp = metric2->value.timestamp;
-        }
-        return;
-
     case STATS_COUNTER:
         metric1->value.counter += metric2->value.counter;
-        return;
+        break;
 
     case STATS_GAUGE:
         metric1->value.gauge.t += metric2->value.gauge.t;
         metric1->value.gauge.b += metric2->value.gauge.b;
-        return;
+        break;
 
     default:
         NOT_REACHED();
+        break;
     }
 }
 

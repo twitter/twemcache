@@ -37,18 +37,43 @@ typedef enum item_flags {
     ITEM_RALIGN  = 8,  /* item data (payload) is right-aligned */
 } item_flags_t;
 
-typedef enum item_store_result {
-    NOT_STORED,
-    STORED,
-    EXISTS,
-    NOT_FOUND
-} item_store_result_t;
+typedef enum item_set_result {
+    SET_OK
+} item_set_result_t;
+
+typedef enum item_cas_result {
+    CAS_OK,
+    CAS_EXISTS,
+    CAS_NOT_FOUND
+} item_cas_result_t;
+
+typedef enum item_add_result {
+    ADD_OK,
+    ADD_EXISTS
+} item_add_result_t;
+
+typedef enum item_replace_result {
+    REPLACE_OK,
+    REPLACE_NOT_FOUND
+} item_replace_result_t;
+
+typedef enum item_annex_result {
+    ANNEX_OK,
+    ANNEX_NOT_FOUND,
+    ANNEX_OVERSIZED,
+    ANNEX_EOM
+} item_annex_result_t;
+
+typedef enum item_delete_result {
+    DELETE_OK,
+    DELETE_NOT_FOUND
+} item_delete_result_t;
 
 typedef enum item_delta_result {
     DELTA_OK,
-    DELTA_NON_NUMERIC,
-    DELTA_EOM,
     DELTA_NOT_FOUND,
+    DELTA_NON_NUMERIC,
+    DELTA_EOM
 } item_delta_result_t;
 
 /*
@@ -78,7 +103,7 @@ typedef enum item_delta_result {
  *   |               |       \
  *   \               |       item_key()
  *   item            \
- *                   item->end, (if enabled) item_cas()
+ *                   item->end, (if enabled) item_get_cas()
  *
  * item->end is followed by:
  * - 8-byte cas, if ITEM_CAS flag is set
@@ -86,7 +111,9 @@ typedef enum item_delta_result {
  * - data with no terminating '\0'
  */
 struct item {
+#if MC_ASSERT_PANIC == 1 || MC_ASSERT_LOG == 1
     uint32_t          magic;      /* item magic (const) */
+#endif
     TAILQ_ENTRY(item) i_tqe;      /* link in lru q or free q */
     SLIST_ENTRY(item) h_sle;      /* link in hash */
     rel_time_t        atime;      /* last access time in secs */
@@ -154,7 +181,7 @@ item_is_raligned(struct item *it) {
 }
 
 static inline uint64_t
-item_cas(struct item *it)
+item_get_cas(struct item *it)
 {
     ASSERT(it->magic == ITEM_MAGIC);
 
@@ -226,8 +253,6 @@ struct item *item_alloc(uint8_t id, char *key, uint8_t nkey, uint32_t dataflags,
 
 void item_reuse(struct item *it);
 
-void item_delete(struct item *it);
-
 void item_remove(struct item *it);
 void item_touch(struct item *it);
 char *item_cache_dump(uint8_t id, uint32_t limit, uint32_t *bytes);
@@ -235,7 +260,12 @@ char *item_cache_dump(uint8_t id, uint32_t limit, uint32_t *bytes);
 struct item *item_get(const char *key, size_t nkey);
 void item_flush_expired(void);
 
-item_store_result_t item_store(struct item *it, req_type_t type, struct conn *c);
-item_delta_result_t item_add_delta(struct conn *c, char *key, size_t nkey, int incr, int64_t delta, char *buf);
+void item_set(struct conn *c);
+item_cas_result_t item_cas(struct conn *c);
+item_add_result_t item_add(struct conn *c);
+item_replace_result_t item_replace(struct conn *c);
+item_annex_result_t item_annex(uint32_t *nbyte, uint8_t *oid, uint8_t *nid, struct conn *c);
+item_delta_result_t item_delta(uint64_t *value, char *key, size_t nkey, bool incr, uint64_t delta);
+item_delete_result_t item_delete(char *key, size_t nkey);
 
 #endif

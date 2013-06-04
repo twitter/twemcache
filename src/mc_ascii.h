@@ -33,6 +33,6 @@
 void asc_complete_nread(struct conn *c);
 rstatus_t asc_parse(struct conn *c);
 void asc_append_stats(struct conn *c, const char *key, uint16_t klen, const char *val, uint32_t vlen);
-void asc_write_server_error(struct conn *c);
+size_t asc_rsp_server_error(struct conn *c);
 
 #endif

@@ -145,6 +145,8 @@ struct slabclass;
     ACTION( REPLACE,    6,          6,        7,        7   )   \
     ACTION( APPEND,     6,          6,        7,        7   )   \
     ACTION( PREPEND,    6,          6,        7,        7   )   \
+    ACTION( APPENDRL,   6,          6,        7,        7   )   \
+    ACTION( PREPENDRL,  6,          6,        7,        7   )   \
     ACTION( CAS,        7,          7,        8,        8   )   \
     ACTION( GET,        3,    INT_MAX,        3,  INT_MAX   )   \
     ACTION( GETS,       3,    INT_MAX,        3,  INT_MAX   )   \

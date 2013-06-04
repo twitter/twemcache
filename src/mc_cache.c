@@ -58,7 +58,7 @@ cache_create(const char *name, size_t bufsize, size_t align)
 
     ret = mc_calloc(1, sizeof(cache_t));
     name_new = mc_alloc(strlen(name) + 1);
-    ptr = mc_calloc(initial_pool_size, bufsize);
+    ptr = mc_calloc(initial_pool_size, sizeof(char *));
 
     if (ret == NULL || name_new == NULL || ptr == NULL ||
         pthread_mutex_init(&ret->mutex, NULL) == -1) {

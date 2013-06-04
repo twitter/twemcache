@@ -59,6 +59,7 @@ class FunctionalStats(unittest.TestCase):
         self.assertEqual(1, len(stats))
         stats = stats[0][1]
         self.assertEqual(len(STATS_KEYS), len(stats))
+        self.assertEqual("0", stats['cmd_total'])
 
     def test_setget(self):
         ''' set and get related stats'''
@@ -69,12 +70,15 @@ class FunctionalStats(unittest.TestCase):
         self.mc.get("foo")
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("1", stats['get'])
-        self.assertEqual("1", stats['get_hit'])
+        self.assertEqual("1", stats['get_key'])
+        self.assertEqual("1", stats['get_key_hit'])
         self.mc.get("NOFOO") # get miss, make sure NOFOO isn't set elsewhere
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("2", stats['get'])
-        self.assertEqual("1", stats['get_hit'])
-        self.assertEqual("1", stats['get_miss'])
+        self.assertEqual("2", stats['get_key'])
+        self.assertEqual("1", stats['get_key_hit'])
+        self.assertEqual("1", stats['get_key_miss'])
+        self.assertEqual("3", stats['cmd_total'])
 
     def test_delete(self):
         '''delete'''
@@ -90,6 +94,7 @@ class FunctionalStats(unittest.TestCase):
         self.assertEqual("2", stats['delete'])
         self.assertEqual("1", stats['delete_hit'])
         self.assertEqual("1", stats['delete_miss'])
+        self.assertEqual("4", stats['cmd_total'])
 
     def test_incrdecr(self):
         ''' incr and decr related stats'''
@@ -109,21 +114,18 @@ class FunctionalStats(unittest.TestCase):
         # hits
         self.mc.set("u", 1)
         stats = self.mc.get_stats()[0][1]
-        self.assertEqual("0", stats['incr_hit'])
         self.mc.incr("u", 1)
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("2", stats['incr'])
-        self.assertEqual("1", stats['incr_hit'])
         self.assertEqual("1", stats['incr_miss'])
         self.assertEqual("1", stats['incr_success'])
         stats = self.mc.get_stats()[0][1]
-        self.assertEqual("0", stats['decr_hit'])
         self.mc.decr("u", 1)
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("2", stats['decr'])
-        self.assertEqual("1", stats['decr_hit'])
         self.assertEqual("1", stats['decr_miss'])
         self.assertEqual("1", stats['decr_success'])
+        self.assertEqual("5", stats['cmd_total'])
 
     def test_casgets(self):
         ''' cas stats '''
@@ -132,20 +134,21 @@ class FunctionalStats(unittest.TestCase):
         self.mc.gets("FOO")
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("1", stats['gets'])
-        self.assertEqual("1", stats['gets_miss'])
+        self.assertEqual("1", stats['gets_key'])
+        self.assertEqual("1", stats['gets_key_miss'])
         self.mc.gets("foo")
         # what's werid here is gets create a new item internally,
         # leading to a higher total_items count
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("2", stats['gets'])
-        self.assertEqual("1", stats['gets_hit'])
-        self.assertEqual("1", stats['gets_miss'])
+        self.assertEqual("2", stats['gets_key'])
+        self.assertEqual("1", stats['gets_key_hit'])
+        self.assertEqual("1", stats['gets_key_miss'])
         # cas
         casid = self.mc.cas_ids["foo"]
         self.mc.cas("foo", "barbar")
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("1", stats['cas'])
-        self.assertEqual("1", stats['cas_hit'])
         self.assertEqual("1", stats['cas_success'])
         server = self.mc.servers[0]
         server.send_cmd("cas FOO 0 0 6 12345\r\nbarbar")
@@ -157,10 +160,10 @@ class FunctionalStats(unittest.TestCase):
         server.expect("EXISTS")
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("3", stats['cas'])
-        self.assertEqual("1", stats['cas_hit'])
         self.assertEqual("1", stats['cas_miss'])
         self.assertEqual("1", stats['cas_badval'])
         self.assertEqual("1", stats['cas_success'])
+        self.assertEqual("6", stats['cmd_total'])
 
     def test_replace(self):
         '''replace'''
@@ -172,9 +175,9 @@ class FunctionalStats(unittest.TestCase):
         self.mc.replace("foo", "BAR")
         stats = self.mc.get_stats()[0][1]
         self.assertEqual("2", stats['replace'])
-        self.assertEqual("1", stats['replace_hit'])
         self.assertEqual("1", stats['replace_miss'])
         self.assertEqual("1", stats['replace_success'])
+        self.assertEqual("3", stats['cmd_total'])
 
     def test_add(self):
         '''add'''
@@ -187,6 +190,7 @@ class FunctionalStats(unittest.TestCase):
         self.assertEqual("2", stats['add'])
         self.assertEqual("1", stats['add_exist'])
         self.assertEqual("1", stats['add_success'])
+        self.assertEqual("2", stats['cmd_total'])
 
     def test_appendprepend(self):
         '''append/prepend'''
@@ -211,6 +215,7 @@ class FunctionalStats(unittest.TestCase):
         self.assertEqual("1", stats['prepend_hit'])
         self.assertEqual("1", stats['prepend_miss'])
         self.assertEqual("1", stats['prepend_success'])
+        self.assertEqual("5", stats['cmd_total'])
 
 
 if __name__ == '__main__':

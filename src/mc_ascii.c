@@ -37,26 +37,28 @@ extern struct settings settings;
 /*
  * Parsing tokens:
  *
- * COMMAND  KEY   FLAGS   EXPIRY   VLEN
- * set      <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
- * add      <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
- * replace  <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
- * append   <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
- * prepend  <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * COMMAND   KEY   FLAGS   EXPIRY   VLEN
+ * set       <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * add       <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * replace   <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * append    <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * prepend   <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * appendrl  <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
+ * prependrl <key> <flags> <expiry> <datalen> [noreply]\r\n<data>\r\n
  *
- * COMMAND  KEY   FLAGS   EXPIRY   VLEN      CAS
- * cas      <key> <flags> <expiry> <datalen> <cas> [noreply]\r\n<data>\r\n
+ * COMMAND   KEY   FLAGS   EXPIRY   VLEN      CAS
+ * cas       <key> <flags> <expiry> <datalen> <cas> [noreply]\r\n<data>\r\n
  *
- * COMMAND  KEY
- * get      <key>\r\n
- * get      <key> [<key>]+\r\n
- * gets     <key>\r\n
- * gets     <key> [<key>]+\r\n
- * delete   <key> [noreply]\r\n
+ * COMMAND   KEY
+ * get       <key>\r\n
+ * get       <key> [<key>]+\r\n
+ * gets      <key>\r\n
+ * gets      <key> [<key>]+\r\n
+ * delete    <key> [noreply]\r\n
  *
- * COMMAND  KEY    DELTA
- * incr     <key> <value> [noreply]\r\n
- * decr     <key> <value> [noreply]\r\n
+ * COMMAND   KEY    DELTA
+ * incr      <key> <value> [noreply]\r\n
+ * decr      <key> <value> [noreply]\r\n
  *
  * COMMAND   SUBCOMMAND
  * quit\r\n
@@ -66,22 +68,22 @@ extern struct settings settings;
  *
  * COMMAND   SUBCOMMAND CACHEDUMP_ID CACHEDUMP_LIMIT
  * stats\r\n
- * stats    <args>\r\n
- * stats    cachedump   <id>         <limit>\r\n
+ * stats     <args>\r\n
+ * stats     cachedump   <id>         <limit>\r\n
  *
- * COMMAND  SUBCOMMAND  AGGR_COMMAND
- * config   aggregate   <num>\r\n
+ * COMMAND   SUBCOMMAND  AGGR_COMMAND
+ * config    aggregate   <num>\r\n
  *
- * COMMAND  SUBCOMMAND  EVICT_COMMAND
- * config   evict       <num>\r\n
+ * COMMAND   SUBCOMMAND  EVICT_COMMAND
+ * config    evict       <num>\r\n
  *
- * COMMAND  SUBCOMMAND  KLOG_COMMAND  KLOG_SUBCOMMAND
- * config   klog        run           start\r\n
- * config   klog        run           stop\r\n
- * config   klog        interval      reset\r\n
- * config   klog        interval      <val>\r\n
- * config   klog        sampling      reset\r\n
- * config   klog        sampling      <val>\r\n
+ * COMMAND   SUBCOMMAND  KLOG_COMMAND  KLOG_SUBCOMMAND
+ * config    klog        run           start\r\n
+ * config    klog        run           stop\r\n
+ * config    klog        interval      reset\r\n
+ * config    klog        interval      <val>\r\n
+ * config    klog        sampling      reset\r\n
+ * config    klog        sampling      <val>\r\n
  */
 
 #define TOKEN_COMMAND           0
@@ -189,25 +191,6 @@ static struct bound ntoken_bound[] = {
 #endif
 
 /*
- * Returns true if ntoken is within the bounds for a given request
- * type, false otherwise.
- */
-static bool
-asc_ntoken_valid(struct conn *c, int ntoken)
-{
-    struct bound *t;
-    int min, max;
-
-    ASSERT(c->req_type > REQ_UNKNOWN && c->req_type < REQ_SENTINEL);
-
-    t = &ntoken_bound[c->req_type];
-    min = t->b[c->noreply].min;
-    max = t->b[c->noreply].max;
-
-    return (ntoken >= min && ntoken <= max) ? true : false;
-}
-
-/*
  * Tokenize the request header and update the token array token with
  * pointer to start of each token and length. Note that tokens are
  * not null terminated.
@@ -287,99 +270,479 @@ asc_write_string(struct conn *c, const char *str, size_t len)
     c->write_and_go = CONN_NEW_CMD;
 }
 
-static void
-asc_write_stored(struct conn *c)
+static size_t
+asc_rsp_stored(struct conn *c)
 {
     const char *str = "STORED";
     size_t len = sizeof("STORED") - 1;
 
     asc_write_string(c, str, len);
 
-    klog_write(c->peer, c->req_type, c->req, c->req_len, RSP_STORED, len);
+    return len;
 }
 
-static void
-asc_write_exists(struct conn *c)
+static size_t
+asc_rsp_exists(struct conn *c)
 {
     const char *str = "EXISTS";
     size_t len = sizeof("EXISTS") - 1;
 
     asc_write_string(c, str, len);
 
-    klog_write(c->peer, c->req_type, c->req, c->req_len, RSP_EXISTS, len);
+    return len;
 }
 
-static void
-asc_write_not_found(struct conn *c)
+static size_t
+asc_rsp_not_found(struct conn *c)
 {
     const char *str = "NOT_FOUND";
     size_t len = sizeof("NOT_FOUND") - 1;
 
     asc_write_string(c, str, len);
 
-    klog_write(c->peer, c->req_type, c->req, c->req_len, RSP_NOT_FOUND, len);
+    return len;
 }
 
-static void
-asc_write_not_stored(struct conn *c)
+static size_t
+asc_rsp_not_stored(struct conn *c)
 {
     const char *str = "NOT_STORED";
     size_t len = sizeof("NOT_STORED") - 1;
 
     asc_write_string(c, str, len);
 
-    klog_write(c->peer, c->req_type, c->req, c->req_len, RSP_NOT_STORED, len);
+    return len;
 }
 
-static void
-asc_write_deleted(struct conn *c)
+static size_t
+asc_rsp_deleted(struct conn *c)
 {
     const char *str = "DELETED";
     size_t len = sizeof("DELETED") - 1;
 
     asc_write_string(c, str, len);
 
-    klog_write(c->peer, c->req_type, c->req, c->req_len, RSP_DELETED, len);
+    return len;
 }
 
-static void
-asc_write_client_error(struct conn *c)
+static size_t
+asc_rsp_client_error(struct conn *c)
 {
     const char *str = "CLIENT_ERROR";
     size_t len = sizeof("CLIENT_ERROR") - 1;
 
     stats_thread_incr(cmd_error);
-
     asc_write_string(c, str, len);
+
+    return len;
 }
 
-void
-asc_write_server_error(struct conn *c)
+size_t
+asc_rsp_server_error(struct conn *c)
 {
     const char *str = "SERVER_ERROR";
     size_t len = sizeof("SERVER_ERROR") - 1;
 
     stats_thread_incr(server_error);
-
     asc_write_string(c, str, len);
+
+    return len;
 }
 
-static void
-asc_write_ok(struct conn *c)
+static size_t
+asc_rsp_ok(struct conn *c)
 {
     const char *str = "OK";
     size_t len = sizeof("OK") - 1;
 
     asc_write_string(c, str, len);
+
+    return len;
 }
 
-static void
-asc_write_version(struct conn *c)
+static size_t
+asc_rsp_version(struct conn *c)
 {
     const char *str = "VERSION " MC_VERSION_STRING;
     size_t len = sizeof("VERSION " MC_VERSION_STRING) - 1;
 
     asc_write_string(c, str, len);
+
+    return len;
+}
+
+static size_t
+asc_rsp_int(struct conn *c, uint64_t num)
+{
+    int len;
+    char temp[INCR_MAX_STORAGE_LEN];
+
+    len = snprintf(temp, INCR_MAX_STORAGE_LEN, "%"PRIu64, num);
+    ASSERT(len < INCR_MAX_STORAGE_LEN);
+    if (len < 0) {
+        log_warn("server error on c %d for value %"PRIu64" during printing: %s",
+                 c->sd, num, strerror(errno));
+        len = asc_rsp_server_error(c);
+    } else {
+        asc_write_string(c, temp, strlen(temp));
+    }
+
+    return (size_t)len;
+}
+
+/*
+ * Returns true if ntoken is within the bounds for a given request
+ * type, false otherwise.
+ */
+static bool
+asc_validate_ntoken(struct conn *c, int ntoken)
+{
+    struct bound *t;
+    int min, max;
+
+    ASSERT(c->req_type > REQ_UNKNOWN && c->req_type < REQ_SENTINEL);
+
+    t = &ntoken_bound[c->req_type];
+    min = t->b[c->noreply].min;
+    max = t->b[c->noreply].max;
+
+    if (ntoken >= min && ntoken <= max) {
+        return true;
+    } else {
+        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
+                    "req of type %d with %d invalid tokens", c->sd,
+                    c->req_type, ntoken);
+
+        asc_rsp_client_error(c);
+        return false;
+    }
+}
+
+/*
+ * Returns true if slabid is within the bounds for a given request
+ * type, false otherwise.
+ */
+static bool
+asc_get_slabid(uint8_t *id, struct conn *c, uint8_t nkey, uint32_t vlen)
+{
+    *id = item_slabid(nkey, vlen);
+    if (*id == SLABCLASS_INVALID_ID) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
+                  "slab id out of range for key size %"PRIu8" and value size "
+                  "%"PRIu32, c->sd, c->req_type, nkey, vlen);
+
+        asc_rsp_client_error(c);
+        return false;
+    } else {
+        return true;
+    }
+}
+
+/*
+ * Returns true if nkey is within the bounds for a given request
+ * type, and update the key, nkey values; false otherwise.
+ */
+static bool
+asc_get_key(char **key, uint8_t *nkey, struct conn *c, struct token *token)
+{
+    size_t keylen;
+
+    *key = token[TOKEN_KEY].val;
+    keylen = token[TOKEN_KEY].len;
+
+    if (keylen > KEY_MAX_LEN) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and %d "
+                  "length key", c->sd, c->req_type, keylen);
+
+        asc_rsp_client_error(c);
+        return false;
+    } else {
+        *nkey = (uint8_t)keylen;
+        return true;
+    }
+}
+
+/*
+ * Returns true if flags is valid and update the flags value; false otherwise.
+ */
+static bool
+asc_get_flags(uint32_t *flags, struct conn *c, struct token *token)
+{
+    if (!mc_strtoul(token[TOKEN_FLAGS].val, flags)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
+                  "invalid flags '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_FLAGS].len, token[TOKEN_FLAGS].val);
+
+        asc_rsp_client_error(c);
+        return false;
+    } else {
+        return true;
+    }
+}
+
+/*
+ * Returns true if expiry is valid and update the expiry value; false otherwise.
+ */
+static bool
+asc_get_expiry(int32_t *exptime_int, struct conn *c, struct token *token)
+{
+    if (!mc_strtol(token[TOKEN_EXPIRY].val, exptime_int)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
+                  "invalid expiry '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_EXPIRY].len, token[TOKEN_EXPIRY].val);
+
+        asc_rsp_client_error(c);
+        return false;
+    } else {
+        return true;
+    }
+}
+
+/*
+ * Returns true if vlen is valid and update the vlen value; false otherwise.
+ */
+static bool
+asc_get_vlen(uint32_t *vlen, struct conn *c, struct token *token)
+{
+    if (!mc_strtoul(token[TOKEN_VLEN].val, vlen)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
+                  "invalid vlen '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_VLEN].len, token[TOKEN_VLEN].val);
+
+        asc_rsp_client_error(c);
+        return false;
+    } else {
+        return true;
+    }
+}
+
+/*
+ * Returns true if delta is valid and update the delta value; false otherwise.
+ */
+static bool
+asc_get_delta(uint64_t *delta, struct conn *c, struct token *token)
+{
+    if (!mc_strtoull(token[TOKEN_DELTA].val, delta)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid delta '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_DELTA].len, token[TOKEN_DELTA].val);
+
+        asc_rsp_client_error(c);
+        return false;
+    } else {
+        return true;
+    }
+}
+
+static void
+asc_complete_set(struct conn *c)
+{
+    struct item *it = c->item;
+    size_t rsplen;
+
+    item_set(c);
+    stats_slab_incr(it->id, set_success);
+    rsplen = asc_rsp_stored(c);
+    klog_write(c->peer, c->req_type, c->req, c->req_len, SET_OK, rsplen);
+}
+
+static void
+asc_complete_cas(struct conn *c)
+{
+    item_cas_result_t res;
+    struct item *it = c->item;
+    size_t rsplen;
+
+    res = item_cas(c);
+    switch (res) {
+    case CAS_OK:
+        stats_slab_incr(it->id, cas_success);
+        rsplen = asc_rsp_stored(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case CAS_EXISTS:
+        stats_thread_incr(cas_badval);
+        rsplen = asc_rsp_exists(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case CAS_NOT_FOUND:
+        stats_thread_incr(cas_miss);
+        rsplen = asc_rsp_not_found(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    default:
+        NOT_REACHED();
+        break;
+    }
+}
+
+static void
+asc_complete_add(struct conn *c)
+{
+    item_add_result_t res;
+    struct item *it = c->item;
+    size_t rsplen;
+
+    res = item_add(c);
+    switch (res) {
+    case ADD_OK:
+        stats_slab_incr(it->id, add_success);
+        rsplen = asc_rsp_stored(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case ADD_EXISTS:
+        stats_thread_incr(add_exist);
+        rsplen = asc_rsp_not_stored(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    default:
+        NOT_REACHED();
+        break;
+    }
+}
+
+static void
+asc_complete_replace(struct conn *c)
+{
+    item_replace_result_t res;
+    struct item *it = c->item;
+    size_t rsplen;
+
+    res = item_replace(c);
+    switch (res) {
+    case REPLACE_OK:
+        stats_slab_incr(it->id, replace_success);
+        rsplen = asc_rsp_stored(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case REPLACE_NOT_FOUND:
+        stats_thread_incr(replace_miss);
+        rsplen = asc_rsp_not_stored(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    default:
+        NOT_REACHED();
+        break;
+    }
+}
+
+static void
+asc_complete_annex(struct conn *c)
+{
+    item_annex_result_t res;
+    uint32_t nbyte;
+    uint8_t oid, nid;
+    size_t rsplen;
+    bool rl;
+
+    rl = (c->req_type == REQ_APPENDRL) || (c->req_type == REQ_PREPENDRL);
+    res = item_annex(&nbyte, &oid, &nid, c);
+    switch (res) {
+    case ANNEX_OK:
+        switch (c->req_type) {
+        case REQ_APPEND:
+            stats_slab_incr(oid, append_hit);
+            stats_slab_incr(nid, append_success);
+            break;
+
+        case REQ_PREPEND:
+            stats_slab_incr(oid, prepend_hit);
+            stats_slab_incr(nid, prepend_success);
+            break;
+
+        case REQ_APPENDRL:
+            stats_slab_incr(oid, appendrl_hit);
+            stats_slab_incr(nid, appendrl_success);
+            break;
+
+        case REQ_PREPENDRL:
+            stats_slab_incr(oid, prependrl_hit);
+            stats_slab_incr(nid, prependrl_success);
+            break;
+
+        default:
+            NOT_REACHED();
+            break;
+        }
+        if (rl) {
+            rsplen = asc_rsp_int(c, nbyte);
+        } else {
+            rsplen = asc_rsp_stored(c);
+        }
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case ANNEX_NOT_FOUND:
+        switch (c->req_type) {
+        case REQ_APPEND:
+            stats_thread_incr(append_miss);
+            break;
+
+        case REQ_PREPEND:
+            stats_thread_incr(prepend_miss);
+            break;
+
+        case REQ_APPENDRL:
+            stats_thread_incr(appendrl_miss);
+            break;
+
+        case REQ_PREPENDRL:
+            stats_thread_incr(prependrl_miss);
+            break;
+
+        default:
+            NOT_REACHED();
+            break;
+        }
+        rsplen = asc_rsp_not_stored(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case ANNEX_OVERSIZED:
+        switch (c->req_type) {
+        case REQ_APPEND:
+            stats_slab_incr(oid, append_hit);
+            break;
+
+        case REQ_PREPEND:
+            stats_slab_incr(oid, prepend_hit);
+            break;
+
+        case REQ_APPENDRL:
+            stats_slab_incr(oid, appendrl_hit);
+            break;
+
+        case REQ_PREPENDRL:
+            stats_slab_incr(oid, prependrl_hit);
+            break;
+
+        default:
+            NOT_REACHED();
+            break;
+        }
+        rsplen = asc_rsp_client_error(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case ANNEX_EOM:
+        log_warn("server error on c %d for req of type %d with store "
+                 "status %d", c->sd, c->req_type, res);
+
+        rsplen = asc_rsp_server_error(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    default:
+        NOT_REACHED();
+        break;
+    }
 }
 
 /*
@@ -389,7 +752,6 @@ asc_write_version(struct conn *c)
 void
 asc_complete_nread(struct conn *c)
 {
-    item_store_result_t ret;
     struct item *it;
     char *end;
 
@@ -400,34 +762,41 @@ asc_complete_nread(struct conn *c)
         log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
                     "req of type %d with missing crlf", c->sd, c->req_type);
 
-        asc_write_client_error(c);
-    } else {
-      ret = item_store(it, c->req_type, c);
-      switch (ret) {
-      case STORED:
-          asc_write_stored(c);
-          break;
+        asc_rsp_client_error(c);
 
-      case EXISTS:
-          asc_write_exists(c);
-          break;
-
-      case NOT_FOUND:
-          asc_write_not_found(c);
-          break;
-
-      case NOT_STORED:
-          asc_write_not_stored(c);
-          break;
-
-      default:
-          log_warn("server error on c %d for req of type %d with unknown "
-                   "store result %d", c->sd, c->req_type, ret);
-
-          asc_write_server_error(c);
-          break;
-      }
+        goto nread_done;
     }
+
+    switch (c->req_type) {
+    case REQ_SET:
+        asc_complete_set(c);
+        break;
+
+    case REQ_CAS:
+        asc_complete_cas(c);
+        break;
+
+    case REQ_ADD:
+        asc_complete_add(c);
+        break;
+
+    case REQ_REPLACE:
+        asc_complete_replace(c);
+        break;
+
+    case REQ_APPEND:
+    case REQ_PREPEND:
+    case REQ_APPENDRL:
+    case REQ_PREPENDRL:
+        asc_complete_annex(c);
+        break;
+
+    default:
+        NOT_REACHED();
+        break;
+    }
+
+nread_done:
 
     item_remove(it);
     c->item = NULL;
@@ -469,12 +838,18 @@ asc_create_suffix(struct conn *c, unsigned valid_key_iter, char **suffix)
         log_warn("server error on c %d for req of type %d with enomem on "
                  "suffix cache", c->sd, c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
         return MC_ENOMEM;
     }
 
     *(c->slist + valid_key_iter) = *suffix;
     return MC_OK;
+}
+
+static void
+asc_destroy_suffix(struct conn *c, char *suffix)
+{
+    cache_free(c->thread->suffix_cache, suffix);
 }
 
 /*
@@ -513,7 +888,7 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
     }
     if (return_cas) {
         sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32" %"PRIu64,
-                      it->dataflags, nbyte, item_cas(it));
+                      it->dataflags, nbyte, item_get_cas(it));
         ASSERT(sz <= SUFFIX_SIZE + CAS_SUFFIX_SIZE);
      } else {
         sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32,
@@ -521,36 +896,46 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
         ASSERT(sz <= SUFFIX_SIZE);
     }
     if (sz < 0) {
-        return MC_ERROR;
+        status = MC_ERROR;
+        goto get_done;
     }
 
     status = conn_add_iov(c, suffix, sz);
     if (status != MC_OK) {
-        return status;
+        goto get_done;
     }
     total_len += sz;
 
     status = conn_add_iov(c, CRLF, CRLF_LEN);
     if (status != MC_OK) {
-        return status;
+        goto get_done;
     }
     total_len += CRLF_LEN;
 
     status = conn_add_iov(c, data, nbyte);
     if (status != MC_OK) {
-        return status;
+        goto get_done;
     }
     total_len += nbyte;
 
     status = conn_add_iov(c, CRLF, CRLF_LEN);
     if (status != MC_OK) {
-        return status;
+        goto get_done;
     }
     total_len += CRLF_LEN;
 
     klog_write(c->peer, c->req_type, item_key(it), it->nkey, 0, total_len);
 
-    return MC_OK;
+get_done:
+    if (status != MC_OK) {
+        /*
+         * an abnormal status will warrant an error, so suffix won't be
+         * used/freed later
+         */
+        asc_destroy_suffix(c, suffix);
+    }
+
+    return status;
 }
 
 static inline void
@@ -558,18 +943,14 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
 {
     rstatus_t status;
     char *key;
-    size_t nkey;
+    size_t keylen;
+    uint8_t nkey;
     unsigned valid_key_iter = 0;
     struct item *it;
     struct token *key_token;
     bool return_cas;
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
-
-        asc_write_client_error(c);
+    if (!asc_validate_ntoken(c, ntoken)) {
         return;
     }
 
@@ -578,31 +959,32 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
 
     do {
         while (key_token->len != 0) {
-
             key = key_token->val;
-            nkey = key_token->len;
+            keylen = key_token->len;
 
-            if (nkey > KEY_MAX_LEN) {
-                log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
-                          "and %d length key", c->sd, c->req_type, nkey);
+            if (keylen > KEY_MAX_LEN) {
+                log_debug(LOG_NOTICE, "client error on c %d for req of type %d and %d "
+                          "length key", c->sd, c->req_type, keylen);
 
-                asc_write_client_error(c);
+                asc_rsp_client_error(c);
                 return;
+            } else {
+                nkey = (uint8_t)keylen;
             }
 
             if (return_cas) {
-                stats_thread_incr(gets);
+                stats_thread_incr(gets_key);
             } else {
-                stats_thread_incr(get);
+                stats_thread_incr(get_key);
             }
 
             it = item_get(key, nkey);
             if (it != NULL) {
                 /* item found */
                 if (return_cas) {
-                    stats_slab_incr(it->id, gets_hit);
+                    stats_slab_incr(it->id, gets_key_hit);
                 } else {
-                    stats_slab_incr(it->id, get_hit);
+                    stats_slab_incr(it->id, get_key_hit);
                 }
 
                 if (valid_key_iter >= c->isize) {
@@ -620,10 +1002,10 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
 
                 status = asc_respond_get(c, valid_key_iter, it, return_cas);
                 if (status != MC_OK) {
-                    log_debug(LOG_NOTICE, "client error on c %d for req of type "
-                              "%d with %d tokens", c->sd, c->req_type, ntoken);
+                    log_warn("server error on c %d for req of type %d with %d "
+                             "tokens", c->sd, c->req_type, ntoken);
 
-                    stats_thread_incr(cmd_error);
+                    asc_rsp_server_error(c);
                     item_remove(it);
                     break;
                 }
@@ -637,9 +1019,9 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
             } else {
                 /* item not found */
                 if (return_cas) {
-                    stats_thread_incr(gets_miss);
+                    stats_thread_incr(gets_key_miss);
                 } else {
-                    stats_thread_incr(get_miss);
+                    stats_thread_incr(get_key_miss);
                 }
                 klog_write(c->peer, c->req_type, key, nkey, 1, 0);
             }
@@ -661,10 +1043,8 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
 
     c->icurr = c->ilist;
     c->ileft = valid_key_iter;
-    if (return_cas) {
-        c->scurr = c->slist;
-        c->sleft = valid_key_iter;
-    }
+    c->scurr = c->slist;
+    c->sleft = valid_key_iter;
 
     log_debug(LOG_VVERB, ">%d END", c->sd);
 
@@ -678,7 +1058,7 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
         log_warn("server error on c %d for req of type %d with enomem", c->sd,
                  c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
     } else {
         conn_set_state(c, CONN_MWRITE);
         c->msg_curr = 0;
@@ -689,92 +1069,51 @@ static void
 asc_process_update(struct conn *c, struct token *token, int ntoken)
 {
     char *key;
-    size_t keylen;
     uint8_t nkey;
     uint32_t flags, vlen;
     int32_t exptime_int;
     time_t exptime;
-    uint64_t req_cas_id = 0;
+    uint64_t req_cas_id;
     struct item *it;
     bool handle_cas;
-    req_type_t type;
     uint8_t id;
 
     asc_set_noreply_maybe(c, token, ntoken);
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
-
-        asc_write_client_error(c);
+    if (!asc_validate_ntoken(c, ntoken)) {
         return;
     }
 
-    type = c->req_type;
-    handle_cas = (type == REQ_CAS) ? true : false;
-    key = token[TOKEN_KEY].val;
-    keylen = token[TOKEN_KEY].len;
-
-    if (keylen > KEY_MAX_LEN) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and %d "
-                  "length key", c->sd, c->req_type, keylen);
-
-        asc_write_client_error(c);
-        return;
-    } else {
-        nkey = (uint8_t)keylen;
-    }
-
-    if (!mc_strtoul(token[TOKEN_FLAGS].val, &flags)) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
-                  "invalid flags '%.*s'", c->sd, c->req_type,
-                  token[TOKEN_FLAGS].len, token[TOKEN_FLAGS].val);
-
-        asc_write_client_error(c);
+    if (!asc_get_key(&key, &nkey, c, token)) {
         return;
     }
 
-    if (!mc_strtol(token[TOKEN_EXPIRY].val, &exptime_int)) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
-                  "invalid expiry '%.*s'", c->sd, c->req_type,
-                  token[TOKEN_EXPIRY].len, token[TOKEN_EXPIRY].val);
-
-        asc_write_client_error(c);
+    if (!asc_get_flags(&flags, c, token)) {
         return;
     }
 
-    if (!mc_strtoul(token[TOKEN_VLEN].val, &vlen)) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
-                  "invalid vlen '%.*s'", c->sd, c->req_type,
-                  token[TOKEN_VLEN].len, token[TOKEN_VLEN].val);
-
-        asc_write_client_error(c);
+    if (!asc_get_expiry(&exptime_int, c, token)) {
         return;
     }
 
-    id = item_slabid(nkey, vlen);
-    if (id == SLABCLASS_INVALID_ID) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
-                  "slab id out of range for key size %"PRIu8" and value size "
-                  "%"PRIu32, c->sd, c->req_type, nkey, vlen);
+    if (!asc_get_vlen(&vlen, c, token)) {
+        return;
+    }
 
-        asc_write_client_error(c);
+    if (!asc_get_slabid(&id, c, nkey, vlen)) {
         return;
     }
 
     exptime = (time_t)exptime_int;
 
-    /* does cas value exist? */
-    if (handle_cas) {
-        if (!mc_strtoull(token[TOKEN_CAS].val, &req_cas_id)) {
-            log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
-                      "invalid cas '%.*s'", c->sd, c->req_type,
-                      token[TOKEN_CAS].len, token[TOKEN_CAS].val);
+    handle_cas = (c->req_type == REQ_CAS) ? true : false;
+    if (handle_cas && !mc_strtoull(token[TOKEN_CAS].val, &req_cas_id)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and "
+                  "invalid cas '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_CAS].len, token[TOKEN_CAS].val);
 
-            asc_write_client_error(c);
-            return;
-        }
+        asc_rsp_client_error(c);
+        return;
     }
 
     it = item_alloc(id, key, nkey, flags, time_reltime(exptime), vlen);
@@ -782,30 +1121,19 @@ asc_process_update(struct conn *c, struct token *token, int ntoken)
         log_warn("server error on c %d for req of type %d because of oom in "
                  "storing item", c->sd, c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
 
         /* swallow the data line */
         c->write_and_go = CONN_SWALLOW;
         c->sbytes = vlen + CRLF_LEN;
 
-        /*
-         * Avoid stale data persisting in cache because we failed alloc.
-         * Unacceptable for SET. Anywhere else too?
-         *
-         * FIXME: either don't delete anything or should be unacceptable for
-         * all but add.
-         */
-        if (type == REQ_SET) {
-            it = item_get(key, nkey);
-            if (it != NULL) {
-                item_delete(it);
-            }
-        }
+        item_delete(key, nkey);
         return;
     }
 
-    item_set_cas(it, req_cas_id);
-
+    if (handle_cas) {
+        item_set_cas(it, req_cas_id);
+    }
     c->item = it;
     c->ritem = item_data(it);
     c->rlbytes = it->nbyte + CRLF_LEN;
@@ -813,66 +1141,91 @@ asc_process_update(struct conn *c, struct token *token, int ntoken)
 }
 
 static void
-asc_process_arithmetic(struct conn *c, struct token *token, int ntoken)
+asc_process_annex(struct conn *c, struct token *token, int ntoken)
 {
-    item_delta_result_t res;
-    char temp[INCR_MAX_STORAGE_LEN];
-    uint64_t delta;
     char *key;
-    size_t nkey;
-    bool incr;
+    uint8_t nkey;
+    uint32_t vlen;
+    struct item *it;
+    uint8_t id;
 
     asc_set_noreply_maybe(c, token, ntoken);
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
+    if (!asc_validate_ntoken(c, ntoken)) {
+        return;
+    }
 
-        asc_write_client_error(c);
+    if (!asc_get_key(&key, &nkey, c, token)) {
+        return;
+    }
+
+    if (!asc_get_vlen(&vlen, c, token)) {
+        return;
+    }
+
+    if (!asc_get_slabid(&id, c, nkey, vlen)) {
+        return;
+    }
+
+    /* flags and exptime are both set to 0 as they have no effect later */
+    it = item_alloc(id, key, nkey, 0, 0, vlen);
+    if (it == NULL) {
+        log_warn("server error on c %d for req of type %d because of oom in "
+                 "allocing item", c->sd, c->req_type);
+
+        asc_rsp_server_error(c);
+
+        /* swallow the data line */
+        c->write_and_go = CONN_SWALLOW;
+        c->sbytes = vlen + CRLF_LEN;
+
+        item_delete(key, nkey);
+        return;
+    }
+
+    c->item = it;
+    c->ritem = item_data(it);
+    c->rlbytes = it->nbyte + CRLF_LEN;
+    conn_set_state(c, CONN_NREAD);
+}
+
+
+static void
+asc_process_delta(struct conn *c, struct token *token, int ntoken)
+{
+    item_delta_result_t res;
+    uint64_t delta;
+    char *key;
+    uint8_t nkey;
+    bool incr;
+    uint64_t value;
+    size_t rsplen;
+
+    asc_set_noreply_maybe(c, token, ntoken);
+
+    if (!asc_validate_ntoken(c, ntoken)) {
+        return;
+    }
+
+    if (!asc_get_key(&key, &nkey, c, token)) {
+        return;
+    }
+
+    if (!asc_get_delta(&delta, c, token)) {
         return;
     }
 
     incr = (c->req_type == REQ_INCR) ? true : false;
-    key = token[TOKEN_KEY].val;
-    nkey = token[TOKEN_KEY].len;
-
-    if (nkey > KEY_MAX_LEN) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and %d "
-                  "length key", c->sd, c->req_type, nkey);
-
-        asc_write_client_error(c);
-        return;
-    }
-
-    if (!mc_strtoull(token[TOKEN_DELTA].val, &delta)) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
-                  "invalid delta '%.*s'", c->sd, c->req_type,
-                  token[TOKEN_DELTA].len, token[TOKEN_DELTA].val);
-
-        asc_write_client_error(c);
-        return;
-    }
-
-    res = item_add_delta(c, key, nkey, incr, delta, temp);
+    res = item_delta(&value, key, nkey, incr, delta);
     switch (res) {
     case DELTA_OK:
-        asc_write_string(c, temp, strlen(temp));
-        klog_write(c->peer, c->req_type, c->req, c->req_len, res, strlen(temp));
-        break;
-
-    case DELTA_NON_NUMERIC:
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
-                  "non-numeric value", c->sd, c->req_type);
-
-        asc_write_client_error(c);
-        break;
-
-    case DELTA_EOM:
-        log_warn("server error on c %d for req of type %d because of oom",
-                 c->sd, c->req_type);
-
-        asc_write_server_error(c);
+        if (incr) {
+            stats_thread_incr(incr_success);
+        } else {
+            stats_thread_incr(decr_success);
+        }
+        rsplen = asc_rsp_int(c, value);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
         break;
 
     case DELTA_NOT_FOUND:
@@ -881,7 +1234,28 @@ asc_process_arithmetic(struct conn *c, struct token *token, int ntoken)
         } else {
             stats_thread_incr(decr_miss);
         }
-        asc_write_not_found(c);
+        rsplen = asc_rsp_not_found(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case DELTA_NON_NUMERIC:
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "non-numeric value", c->sd, c->req_type);
+
+        rsplen = asc_rsp_client_error(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+        rsplen = asc_rsp_client_error(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
+        break;
+
+    case DELTA_EOM:
+        log_warn("server error on c %d for req of type %d because of oom",
+                 c->sd, c->req_type);
+
+        rsplen = asc_rsp_server_error(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
         break;
 
     default:
@@ -893,44 +1267,38 @@ asc_process_arithmetic(struct conn *c, struct token *token, int ntoken)
 static void
 asc_process_delete(struct conn *c, struct token *token, int ntoken)
 {
+    item_delete_result_t res;
     char *key;       /* key to be deleted */
-    size_t nkey;     /* # key bytes */
-    struct item *it; /* item for this key */
+    uint8_t nkey;     /* # key bytes */
+    size_t rsplen;
 
     asc_set_noreply_maybe(c, token, ntoken);
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
-
-        asc_write_client_error(c);
+    if (!asc_validate_ntoken(c, ntoken)) {
         return;
     }
 
-    key = token[TOKEN_KEY].val;
-    nkey = token[TOKEN_KEY].len;
-
-    if (nkey > KEY_MAX_LEN) {
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d and %d "
-                  "length key", c->sd, c->req_type, nkey);
-
-        asc_write_client_error(c);
+    if (!asc_get_key(&key, &nkey, c, token)) {
         return;
     }
 
-    /*
-     * FIXME: This is not thread-safe, two threads could try to delete the same
-     * item twice after succeeding in item_get, leading to erroneous stats
-     */
-    it = item_get(key, nkey);
-    if (it != NULL) {
-        stats_slab_incr(it->id, delete_hit);
-        item_delete(it);
-        asc_write_deleted(c);
-    } else {
+    res  = item_delete(key, nkey);
+    switch (res) {
+    case DELETE_OK:
+        stats_thread_incr(delete_hit);
+        rsplen = asc_rsp_deleted(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, DELETE_OK, rsplen);
+        break;
+
+    case DELETE_NOT_FOUND:
         stats_thread_incr(delete_miss);
-        asc_write_not_found(c);
+        rsplen = asc_rsp_not_found(c);
+        klog_write(c->peer, c->req_type, c->req, c->req_len, DELETE_OK, rsplen);
+        break;
+
+    default:
+        NOT_REACHED();
+        break;
     }
 }
 
@@ -943,17 +1311,11 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
         log_warn("server error on c %d for req of type %d because stats is "
                  "disabled", c->sd, c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
         return;
     }
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
-
-
-        asc_write_client_error(c);
+    if (!asc_validate_ntoken(c, ntoken)) {
         return;
     }
 
@@ -962,7 +1324,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
     } else if (strncmp(t->val, "reset", t->len) == 0) {
         log_warn("server error on c %d for req of type %d because stats reset "
                  "is not supported", c->sd, c->req_type);
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
         return;
     } else if (strncmp(t->val, "settings", t->len) == 0) {
         stats_settings(c);
@@ -975,7 +1337,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
                         "for req of type %d with %d invalid tokens", c->sd,
                         c->req_type, ntoken);
 
-            asc_write_client_error(c);
+            asc_rsp_client_error(c);
             return;
         }
 
@@ -987,7 +1349,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
                       token[TOKEN_CACHEDUMP_ID].val, token[TOKEN_CACHEDUMP_LIMIT].len,
                       token[TOKEN_CACHEDUMP_LIMIT].val);
 
-            asc_write_client_error(c);
+            asc_rsp_client_error(c);
             return;
         }
 
@@ -996,7 +1358,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
                       "because %d is an illegal slab id", c->sd, c->req_type,
                       id);
 
-            asc_write_client_error(c);
+            asc_rsp_client_error(c);
             return;
         }
 
@@ -1017,7 +1379,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
                       "invalid stats subcommand '%.*s", c->sd, c->req_type,
                       t->len, t->val);
 
-            asc_write_client_error(c);
+            asc_rsp_client_error(c);
             return;
         }
 
@@ -1025,7 +1387,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
             log_warn("server error on c %d for req of type %d because of oom "
                      "writing stats", c->sd, c->req_type);
 
-            asc_write_server_error(c);
+            asc_rsp_server_error(c);
         } else {
             core_write_and_free(c, c->stats.buffer, c->stats.offset);
             c->stats.buffer = NULL;
@@ -1041,7 +1403,7 @@ asc_process_stats(struct conn *c, struct token *token, int ntoken)
         log_warn("server error on c %d for req of type %d because of oom "
                  "writing stats", c->sd, c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
     } else {
         core_write_and_free(c, c->stats.buffer, c->stats.offset);
         c->stats.buffer = NULL;
@@ -1053,12 +1415,7 @@ asc_process_klog(struct conn *c, struct token *token, int ntoken)
 {
     struct token *t;
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
-
-        asc_write_client_error(c);
+    if (!asc_validate_ntoken(c, ntoken)) {
         return;
     }
 
@@ -1069,7 +1426,7 @@ asc_process_klog(struct conn *c, struct token *token, int ntoken)
             log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
                       "with klog filename not set", c->sd, c->req_type);
 
-            asc_write_client_error(c);
+            asc_rsp_client_error(c);
             return;
         }
 
@@ -1077,23 +1434,23 @@ asc_process_klog(struct conn *c, struct token *token, int ntoken)
         if (strncmp(t->val, "start", t->len) == 0) {
             log_debug(LOG_NOTICE, "klog start at epoch %u", time_now());
             settings.klog_running = true;
-            asc_write_ok(c);
+            asc_rsp_ok(c);
         } else if (strncmp(t->val, "stop", t->len) == 0) {
             log_debug(LOG_NOTICE, "klog stops at epoch %u", time_now());
             settings.klog_running = false;
-            asc_write_ok(c);
+            asc_rsp_ok(c);
         } else {
             log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
                       "with invalid klog run subcommand '%.*s'", c->sd,
                       c->req_type, t->len, t->val);
 
-            asc_write_client_error(c);
+            asc_rsp_client_error(c);
         }
     } else if (strncmp(t->val, "interval", t->len) == 0) {
         t = &token[TOKEN_KLOG_SUBCOMMAND];
         if (strncmp(t->val, "reset", t->len) == 0) {
             stats_set_interval(STATS_DEFAULT_INTVL);
-            asc_write_ok(c);
+            asc_rsp_ok(c);
         } else {
             int32_t interval;
 
@@ -1102,23 +1459,23 @@ asc_process_klog(struct conn *c, struct token *token, int ntoken)
                           "with invalid klog interval '%.*s'", c->sd,
                           c->req_type, t->len, t->val);
 
-                asc_write_client_error(c);
+                asc_rsp_client_error(c);
             } else if (interval < KLOG_MIN_INTVL) {
                 log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
                           "with invalid klog interval %"PRId32"", c->sd,
                           c->req_type, interval);
 
-                asc_write_client_error(c);
+                asc_rsp_client_error(c);
             } else {
                 stats_set_interval(interval);
-                asc_write_ok(c);
+                asc_rsp_ok(c);
             }
         }
     } else if (strncmp(t->val, "sampling", t->len) == 0) {
         t = &token[TOKEN_KLOG_SUBCOMMAND];
         if (strncmp(t->val, "reset", t->len) == 0) {
             settings.klog_sampling_rate = KLOG_DEFAULT_SMP_RATE;
-            asc_write_ok(c);
+            asc_rsp_ok(c);
         } else {
             int32_t sampling;
 
@@ -1127,16 +1484,16 @@ asc_process_klog(struct conn *c, struct token *token, int ntoken)
                           "with invalid klog sampling '%.*s'", c->sd,
                           c->req_type, t->len, t->val);
 
-                asc_write_client_error(c);
+                asc_rsp_client_error(c);
             } else if (sampling <= 0) {
                 log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
                           "with invalid klog sampling %"PRId32"", c->sd,
                           c->req_type, sampling);
 
-                asc_write_client_error(c);
+                asc_rsp_client_error(c);
             } else {
                 settings.klog_sampling_rate = sampling;
-                asc_write_ok(c);
+                asc_rsp_ok(c);
             }
         }
     } else {
@@ -1144,7 +1501,7 @@ asc_process_klog(struct conn *c, struct token *token, int ntoken)
                   "invalid klog subcommand '%.*s'", c->sd, c->req_type,
                   t->len, t->val);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
     }
 }
 
@@ -1160,7 +1517,7 @@ asc_process_verbosity(struct conn *c, struct token *token, int ntoken)
                     "req of type %d with %d invalid tokens", c->sd,
                     c->req_type, ntoken);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
@@ -1169,13 +1526,13 @@ asc_process_verbosity(struct conn *c, struct token *token, int ntoken)
                   "invalid level '%.*s'", c->sd, c->req_type,
                   token[TOKEN_SUBCOMMAND].len, token[TOKEN_SUBCOMMAND].val);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
     log_level_set(level);
 
-    asc_write_ok(c);
+    asc_rsp_ok(c);
 }
 
 static void
@@ -1188,7 +1545,7 @@ asc_process_aggregate(struct conn *c, struct token *token, int ntoken)
                     "req of type %d with %d invalid tokens", c->sd,
                     c->req_type, ntoken);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
@@ -1197,19 +1554,19 @@ asc_process_aggregate(struct conn *c, struct token *token, int ntoken)
                   "invalid option '%.*s'", c->sd, c->req_type,
                   token[TOKEN_AGGR_COMMAND].len, token[TOKEN_AGGR_COMMAND].val);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
     if (interval > 0) {
         stats_set_interval(interval);
-        asc_write_ok(c);
+        asc_rsp_ok(c);
     } else if (interval == 0) {
         stats_set_interval(STATS_DEFAULT_INTVL);
-        asc_write_ok(c);
+        asc_rsp_ok(c);
     } else {
         stats_set_interval(-1000000);
-        asc_write_ok(c);
+        asc_rsp_ok(c);
     }
 }
 
@@ -1223,7 +1580,7 @@ asc_process_evict(struct conn *c, struct token *token, int ntoken)
                     "req of type %d with %d invalid tokens", c->sd,
                     c->req_type, ntoken);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
@@ -1232,20 +1589,20 @@ asc_process_evict(struct conn *c, struct token *token, int ntoken)
                   "invalid option '%.*s'", c->sd, c->req_type,
                   token[TOKEN_EVICT_COMMAND].len,token[TOKEN_EVICT_COMMAND].val);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
     if (option >= EVICT_NONE && option < EVICT_INVALID) {
         settings.evict_opt = option;
-        asc_write_ok(c);
+        asc_rsp_ok(c);
         return;
     }
 
     log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
               "invalid option %"PRId32"", c->sd, c->req_type, option);
 
-    asc_write_client_error(c);
+    asc_rsp_client_error(c);
 }
 
 static void
@@ -1273,19 +1630,14 @@ asc_process_flushall(struct conn *c, struct token *token, int ntoken)
 
     asc_set_noreply_maybe(c, token, ntoken);
 
-    if (!asc_ntoken_valid(c, ntoken)) {
-        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
-                    "req of type %d with %d invalid tokens", c->sd,
-                    c->req_type, ntoken);
-
-        asc_write_client_error(c);
+    if (!asc_validate_ntoken(c, ntoken)) {
         return;
     }
 
     if (ntoken == t->b[c->noreply].min) {
         settings.oldest_live = time_now() - 1;
         item_flush_expired();
-        asc_write_ok(c);
+        asc_rsp_ok(c);
         return;
     }
 
@@ -1294,7 +1646,7 @@ asc_process_flushall(struct conn *c, struct token *token, int ntoken)
                   "invalid numeric value '%.*s'", c->sd, c->req_type,
                   token[TOKEN_SUBCOMMAND].len, token[TOKEN_SUBCOMMAND].val);
 
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         return;
     }
 
@@ -1314,7 +1666,7 @@ asc_process_flushall(struct conn *c, struct token *token, int ntoken)
     }
 
     item_flush_expired();
-    asc_write_ok(c);
+    asc_rsp_ok(c);
 }
 
 static req_type_t
@@ -1379,9 +1731,9 @@ asc_parse_type(struct conn *c, struct token *token, int ntoken)
         break;
 
     case 7:
-        if (str8cmp(tval, 'r', 'e', 'p', 'l', 'a', 'c', 'e', ' ')) {
+        if (str7cmp(tval, 'r', 'e', 'p', 'l', 'a', 'c', 'e')) {
             type = REQ_REPLACE;
-        } else if (str8cmp(tval, 'p', 'r', 'e', 'p', 'e', 'n', 'd', ' ')) {
+        } else if (str7cmp(tval, 'p', 'r', 'e', 'p', 'e', 'n', 'd')) {
             type = REQ_PREPEND;
         } else if (str7cmp(tval, 'v', 'e', 'r', 's', 'i', 'o', 'n')) {
             type = REQ_VERSION;
@@ -1389,9 +1741,18 @@ asc_parse_type(struct conn *c, struct token *token, int ntoken)
 
         break;
 
+    case 8:
+        if (str8cmp(tval, 'a', 'p', 'p', 'e', 'n', 'd', 'r', 'l')) {
+            type = REQ_APPENDRL;
+        }
+
+        break;
+
     case 9:
         if (str9cmp(tval, 'f', 'l', 'u', 's', 'h', '_', 'a', 'l', 'l')) {
             type = REQ_FLUSHALL;
+        } else if (str9cmp(tval, 'p', 'r', 'e', 'p', 'e', 'n', 'd', 'r', 'l')) {
+            type = REQ_PREPENDRL;
         } else if (str9cmp(tval, 'v', 'e', 'r', 'b', 'o', 's', 'i', 't', 'y')) {
             type = REQ_VERBOSITY;
         }
@@ -1413,11 +1774,6 @@ asc_dispatch(struct conn *c)
     struct token token[TOKEN_MAX];
     int ntoken;
 
-    /*
-     * For commands set, add, or replace, we build an item and read the data
-     * directly into it, then continue in asc_complete_nread().
-     */
-
     c->msg_curr = 0;
     c->msg_used = 0;
     c->iov_used = 0;
@@ -1426,7 +1782,7 @@ asc_dispatch(struct conn *c)
         log_warn("server error on c %d for req of type %d because of oom in "
                  "preparing response", c->sd, c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
         return;
     }
 
@@ -1435,68 +1791,93 @@ asc_dispatch(struct conn *c)
     c->req_type = asc_parse_type(c, token, ntoken);
     switch (c->req_type) {
     case REQ_GET:
+        stats_thread_incr(cmd_total);
+        stats_thread_incr(get);
+        asc_process_read(c, token, ntoken);
+        break;
+
     case REQ_GETS:
-        /* we do not update stats metrics here because of multi-get */
+        stats_thread_incr(cmd_total);
+        stats_thread_incr(gets);
         asc_process_read(c, token, ntoken);
         break;
 
     case REQ_SET:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(set);
         asc_process_update(c, token, ntoken);
         break;
 
+    case REQ_CAS:
+        stats_thread_incr(cmd_total);
+        stats_thread_incr(cas);
+        asc_process_update(c, token, ntoken);
+        break;
+
     case REQ_ADD:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(add);
         asc_process_update(c, token, ntoken);
         break;
 
     case REQ_REPLACE:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(replace);
         asc_process_update(c, token, ntoken);
         break;
 
     case REQ_APPEND:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(append);
-        asc_process_update(c, token, ntoken);
+        asc_process_annex(c, token, ntoken);
         break;
 
     case REQ_PREPEND:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(prepend);
-        asc_process_update(c, token, ntoken);
+        asc_process_annex(c, token, ntoken);
         break;
 
-    case REQ_CAS:
-        stats_thread_incr(cas);
-        asc_process_update(c, token, ntoken);
+    case REQ_APPENDRL:
+        stats_thread_incr(cmd_total);
+        stats_thread_incr(appendrl);
+        asc_process_annex(c, token, ntoken);
+        break;
+
+    case REQ_PREPENDRL:
+        stats_thread_incr(cmd_total);
+        stats_thread_incr(prependrl);
+        asc_process_annex(c, token, ntoken);
         break;
 
     case REQ_INCR:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(incr);
-        asc_process_arithmetic(c, token, ntoken);
+        asc_process_delta(c, token, ntoken);
         break;
 
     case REQ_DECR:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(decr);
-        asc_process_arithmetic(c, token, ntoken);
+        asc_process_delta(c, token, ntoken);
         break;
 
     case REQ_DELETE:
+        stats_thread_incr(cmd_total);
         stats_thread_incr(delete);
         asc_process_delete(c, token, ntoken);
         break;
 
     case REQ_STATS:
-        stats_thread_incr(stats);
         asc_process_stats(c, token, ntoken);
         break;
 
     case REQ_FLUSHALL:
-        stats_thread_incr(flush);
         asc_process_flushall(c, token, ntoken);
         break;
 
     case REQ_VERSION:
-        asc_write_version(c);
+        asc_rsp_version(c);
         break;
 
     case REQ_QUIT:
@@ -1515,7 +1896,7 @@ asc_dispatch(struct conn *c)
     default:
         log_hexdump(LOG_INFO, c->req, c->req_len, "req on c %d with %d "
                     "invalid tokens", c->sd, ntoken);
-        asc_write_client_error(c);
+        asc_rsp_client_error(c);
         break;
     }
 }

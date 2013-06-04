@@ -97,7 +97,7 @@ core_write_and_free(struct conn *c, char *buf, int bytes)
         log_warn("server error on c %d for req of type %d because message "
                   "buffer is NULL", c->sd, c->req_type);
 
-        asc_write_server_error(c);
+        asc_rsp_server_error(c);
     }
 }
 
@@ -139,7 +139,7 @@ core_read_udp(struct conn *c)
         if (buf[4] != 0 || buf[5] != 1) {
             log_warn("server error: multipacket req not supported");
 
-            asc_write_server_error(c);
+            asc_rsp_server_error(c);
             return READ_NO_DATA_RECEIVED;
         }
 
@@ -200,7 +200,7 @@ core_read_tcp(struct conn *c)
                          "oom alloc buf for new req", c->sd, c->req_type);
 
                 c->rbytes = 0; /* ignore what we read */
-                asc_write_server_error(c);
+                asc_rsp_server_error(c);
                 c->write_and_go = CONN_CLOSE;
                 return READ_MEMORY_ERROR;
             }

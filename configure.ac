@@ -1,7 +1,7 @@
 # Define the package version numbers and the bug reporting address
 m4_define([MC_MAJOR], 2)
-m4_define([MC_MINOR], 5)
-m4_define([MC_PATCH], 3)
+m4_define([MC_MINOR], 6)
+m4_define([MC_PATCH], 0)
 m4_define([MC_BUGS], [cache-team@twitter.com])
 
 # Initialize autoconf

@@ -279,7 +279,9 @@ slab_hdr_init(struct slab *slab, uint8_t id)
 {
     ASSERT(id >= SLABCLASS_MIN_ID && id <= slabclass_max_id);
 
+#if MC_ASSERT_PANIC == 1 || MC_ASSERT_LOG == 1
     slab->magic = SLAB_MAGIC;
+#endif
     slab->id = id;
     slab->unused = 0;
     slab->refcount = 0;
@@ -436,7 +438,6 @@ slab_evict_one(struct slab *slab)
 
     stats_slab_incr(slab->id, slab_evict);
     stats_slab_decr(slab->id, slab_curr);
-    stats_slab_settime(slab->id, slab_evict_ts, time_now());
 }
 
 /*
@@ -514,7 +515,6 @@ slab_add_one(struct slab *slab, uint8_t id)
 
     stats_slab_incr(id, slab_alloc);
     stats_slab_incr(id, slab_curr);
-    stats_slab_settime(id, slab_alloc_ts, time_now());
 
     /* initialize slab header */
     slab_hdr_init(slab, id);
@@ -548,7 +548,6 @@ slab_get(uint8_t id)
     struct slab *slab;
 
     stats_slab_incr(id, slab_req);
-    stats_slab_settime(id, slab_req_ts, time_now());
 
     ASSERT(slabclass[id].free_item == NULL);
     ASSERT(TAILQ_EMPTY(&slabclass[id].free_itemq));
@@ -564,14 +563,10 @@ slab_get(uint8_t id)
     }
 
     if (slab != NULL) {
-        stats_slab_settime(id, slab_new_ts, time_now());
-
         slab_add_one(slab, id);
         status = MC_OK;
     } else {
         stats_slab_incr(id, slab_error);
-        stats_slab_settime(id, slab_error_ts, time_now());
-
         status = MC_ENOMEM;
     }
 

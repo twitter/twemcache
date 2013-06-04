@@ -1,3 +1,16 @@
+2013-06-04  Cache Team <cache-team@twitter.com>
+	* twemcache: version 2.6.0 release
+	* Fix: memory leak in suffix, with contribution from @ferlatum & @skuzmich
+	* Fix: mc_cache create using the right parameter now (credit to @haipome)
+	* Fix: wrong assertion crippling debug version of binary
+	* Fix: UDP packet using 100% CPU (backported by @cloudflare)
+	* Feature: adding separate metrics to track get* commands and get* keys
+	* Feature: adding appendrl and prepend rl command to return data length
+	* Cleanup: avoiding allocating item/slab magic when assert is not used
+	* Cleanup: stats cleanup within the item & command processing modules
+	* Cleanup: refactoring of the interfaces between mc_items.* and mc_ascii.*
+	* Misc: help information now displays in Unix style
+
 2012-12-11  Cache Team <cache-team@twitter.com>
 	* twemcache: version 2.5.3 release
 	* Fix: insufficient item length causing segfault
