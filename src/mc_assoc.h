@@ -38,5 +38,6 @@ void assoc_deinit(void);
 struct item *assoc_find(const char *key, size_t nkey);
 void assoc_insert(struct item *item);
 void assoc_delete(const char *key, size_t nkey);
+size_t mc_get_heap_hashtable(void);
 
 #endif

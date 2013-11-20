@@ -662,6 +662,9 @@ stats_default(struct conn *c)
                 usage.ru_utime.tv_usec);
     stats_print(c, "rusage_system", "%ld.%06ld", usage.ru_stime.tv_sec,
                 usage.ru_stime.tv_usec);
+    stats_print(c, "heap_curr", "%ld", mc_malloc_used_memory());
+    stats_print(c, "heap_hashtable", "%ld", mc_get_heap_hashtable());
+    stats_print(c, "heap_conn", "%ld", mc_get_heap_conn());
 
     sem_wait(&aggregator.stats_sem);
 

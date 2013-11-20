@@ -483,67 +483,6 @@ _scnprintf(char *buf, size_t size, const char *fmt, ...)
     return i;
 }
 
-void *
-_mc_alloc(size_t size, const char *name, int line)
-{
-    void *p;
-
-    ASSERT(size != 0);
-
-    p = malloc(size);
-    if (p == NULL) {
-        log_error("malloc(%zu) failed @ %s:%d", size, name, line);
-    } else {
-        log_debug(LOG_VVERB, "malloc(%zu) at %p @ %s:%d", size, p, name, line);
-    }
-
-    return p;
-}
-
-void *
-_mc_zalloc(size_t size, const char *name, int line)
-{
-    void *p;
-
-    p = _mc_alloc(size, name, line);
-    if (p != NULL) {
-        memset(p, 0, size);
-    }
-
-    return p;
-}
-
-void *
-_mc_calloc(size_t nmemb, size_t size, const char *name, int line)
-{
-    return _mc_zalloc(nmemb * size, name, line);
-}
-
-void *
-_mc_realloc(void *ptr, size_t size, const char *name, int line)
-{
-    void *p;
-
-    ASSERT(size != 0);
-
-    p = realloc(ptr, size);
-    if (p == NULL) {
-        log_error("realloc(%zu) failed @ %s:%d", size, name, line);
-    } else {
-        log_debug(LOG_VVERB, "realloc(%zu) at %p @ %s:%d", size, p, name, line);
-    }
-
-    return p;
-}
-
-void
-_mc_free(void *ptr, const char *name, int line)
-{
-    ASSERT(ptr != NULL);
-    log_debug(LOG_VVERB, "free(%p) @ %s:%d", ptr, name, line);
-    free(ptr);
-}
-
 void
 mc_assert(const char *cond, const char *file, int line, int panic)
 {
@@ -574,7 +513,7 @@ mc_stacktrace(int skip_count)
         loga("[%d] %s", j, symbols[i]);
     }
 
-    free(symbols);
+    mc_libc_free(symbols);
 #endif
 }
 

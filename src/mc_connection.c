@@ -39,6 +39,10 @@ static uint32_t nfree_connq;              /* # free conn q */
 static struct conn_tqh free_connq;        /* free conn q */
 static pthread_mutex_t free_connq_mutex;  /* free conn q mutex */
 
+static size_t heap_conn = 0;              /* total struct conn heap usage */
+static int mc_heap_conn_thread_safe = 1; 
+pthread_mutex_t heap_conn_mutex = PTHREAD_MUTEX_INITIALIZER;/*heap_conn mutex*/
+
 void
 conn_cq_init(struct conn_q *cq)
 {
@@ -123,6 +127,10 @@ conn_free(struct conn *c)
         mc_free(c->iov);
     }
 
+    pthread_mutex_lock(&heap_conn_mutex);
+    heap_conn -= (sizeof(*c) + c->rsize + c->wsize);
+    pthread_mutex_unlock(&heap_conn_mutex);
+    
     mc_free(c);
 }
 
@@ -204,6 +212,10 @@ conn_get(int sd, conn_state_t state, int ev_flags, int rsize, int udp)
         }
 
         stats_thread_incr(conn_struct);
+
+        pthread_mutex_lock(&heap_conn_mutex);
+        heap_conn += (sizeof(*c) + c->rsize + c->wsize);
+        pthread_mutex_unlock(&heap_conn_mutex);
     }
 
     STAILQ_NEXT(c, c_tqe) = NULL;
@@ -609,4 +621,20 @@ conn_build_udp_headers(struct conn *c)
     }
 
     return MC_OK;
+}
+
+size_t
+mc_get_heap_conn(void)
+{
+    size_t hc = 0;
+
+    if (mc_heap_conn_thread_safe) {
+        pthread_mutex_lock(&heap_conn_mutex);
+        hc = heap_conn;
+        pthread_mutex_unlock(&heap_conn_mutex);
+    } else {
+        hc = heap_conn;
+    }
+
+    return hc;
 }

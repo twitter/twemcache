@@ -231,6 +231,221 @@ AS_IF(
   ]
 )
 
+# Libjemalloc detection; 
+trylibjemallocdir=""
+AC_ARG_WITH([libjemalloc],
+  [AS_HELP_STRING([--with-libjemalloc=@<:@path@:>@], [specify path to libjemalloc install])],
+  [trylibjemallocdir=$withval], []
+)
+LIBJEMALLOC_URL=http://www.canonware.com/jemalloc/
+AC_CACHE_CHECK([for libjemalloc directory], [ac_cv_libjemalloc_dir],
+  [
+    saved_LIBS="$LIBS"
+    saved_LDFLAGS="$LDFLAGS"
+    saved_CPPFLAGS="$CPPFLAGS"
+    lj_found=no
+    for ljdir in $trylibjemallocdir "" $prefix /usr/local
+    do
+      LDFLAGS="$saved_LDFLAGS"
+      LIBS="-ljemalloc $saved_LIBS"
+
+      # Skip the directory if it isn't there.
+      AS_IF([test ! -z "$ljdir" -a ! -d "$ljdir"], [continue])
+      AS_IF(
+        [test ! -z "$ljdir"],
+        [
+          AS_IF(
+            [test -d "$ljdir/lib"],
+            [LDFLAGS="-L$ljdir/lib $LDFLAGS"],
+            [LDFLAGS="-L$ljdir $LDFLAGS"]
+          )
+          AS_IF(
+            [test -d "$ljdir/include"],
+            [CPPFLAGS="-I$ljdir/include $CPPFLAGS"],
+            [CPPFLAGS="-I$ljdir $CPPFLAGS"]
+          )
+        ]
+      )
+
+      # Can I compile and link it?
+      AC_TRY_LINK(
+        [
+          #include <sys/time.h>
+          #include <sys/types.h>
+          #include <jemalloc/jemalloc.h>
+        ],
+        [
+          int length = 0;
+          char *ptr = (char*)jemalloc(4);
+          length = jemalloc_usable_size(ptr);
+          jefree(ptr);
+        ],
+        [libjemalloc_linked=yes],
+        [libjemalloc_linked=no]
+      )
+      AS_IF(
+        [test $libjemalloc_linked = yes],
+        [
+          AS_IF(
+            [test ! -z "$ljdir"],
+            [ac_cv_libjemalloc_dir=$ljdir],
+            [ac_cv_libjemalloc_dir="(system)"]
+          )
+          lj_found=yes
+          break
+        ]
+      )
+    done
+    LIBS="$saved_LIBS"
+    LDFLAGS="$saved_LDFLAGS"
+    CPPFLAGS="$saved_CPPFLAGS"
+#    AS_IF(
+#      [test $lj_found = no],
+#      [AC_MSG_ERROR([libjemalloc required. Get it from $LIBJEMALLOC_URL or specify its path using --with-libjemalloc=/dir/])]
+#    )
+  ]
+)
+AS_IF(
+  [test $ac_cv_libjemalloc_dir != "(system)"],
+  [
+    AS_IF(
+      [test -d "$ac_cv_libjemalloc_dir/lib"],
+      [
+        LDFLAGS="-L$ac_cv_libjemalloc_dir/lib $LDFLAGS"
+        lj_libdir="$ac_cv_libjemalloc_dir/lib"
+      ],
+      [
+        LDFLAGS="-L$ac_cv_libjemalloc_dir $LDFLAGS"
+        lj_libdir="$ac_cv_libjemalloc_dir"
+      ]
+    )
+    AS_IF(
+      [test -d "$ac_cv_libjemalloc_dir/include"],
+      [CPPFLAGS="-I$ac_cv_libjemalloc_dir/include $CPPFLAGS"]
+      [CPPFLAGS="-I$ac_cv_libjemalloc_dir $CPPFLAGS"]
+    )
+  ]
+)
+
+AS_IF(
+  [test $lj_found != yes],
+  [
+# Libtcmalloc detection; 
+trylibtcmallocdir=""
+AC_ARG_WITH([libtcmalloc],
+  [AS_HELP_STRING([--with-libtcmalloc=@<:@path@:>@], [specify path to libtcmalloc install])],
+  [trylibtcmallocdir=$withval], []
+)
+LIBTCMALLOC_URL=http://code.google.com/p/gperftools/
+AC_CACHE_CHECK([for libtcmalloc directory], [ac_cv_libtcmalloc_dir],
+  [
+    saved_LIBS="$LIBS"
+    saved_LDFLAGS="$LDFLAGS"
+    saved_CPPFLAGS="$CPPFLAGS"
+    lt_found=no
+    for ltdir in $trylibtcmallocdir "" $prefix /usr/local
+    do
+      LDFLAGS="$saved_LDFLAGS"
+      LIBS="-ltcmalloc $saved_LIBS"
+
+      # Skip the directory if it isn't there.
+      AS_IF([test ! -z "$ltdir" -a ! -d "$ltdir"], [continue])
+      AS_IF(
+        [test ! -z "$ltdir"],
+        [
+          AS_IF(
+            [test -d "$ltdir/lib"],
+            [LDFLAGS="-L$ltdir/lib $LDFLAGS"],
+            [LDFLAGS="-L$ltdir $LDFLAGS"]
+          )
+          AS_IF(
+            [test -d "$ltdir/include"],
+            [CPPFLAGS="-I$ltdir/include $CPPFLAGS"],
+            [CPPFLAGS="-I$ltdir $CPPFLAGS"]
+          )
+        ]
+      )
+
+      # Can I compile and link it?
+      AC_TRY_LINK(
+        [
+          #include <sys/time.h>
+          #include <sys/types.h>
+          #include <google/tcmalloc.h>
+        ],
+        [
+          int length = 0;
+          char *ptr = (char*)tc_malloc(4);
+          length = tc_malloc_size(ptr);
+          tc_free(ptr);
+        ],
+        [libtcmalloc_linked=yes],
+        [libtcmalloc_linked=no]
+      )
+      AS_IF(
+        [test $libtcmalloc_linked = yes],
+        [
+          AS_IF(
+            [test ! -z "$ltdir"],
+            [ac_cv_libtcmalloc_dir=$ltdir],
+            [ac_cv_libtcmalloc_dir="(system)"]
+          )
+          lt_found=yes
+          break
+        ]
+      )
+    done
+    LIBS="$saved_LIBS"
+    LDFLAGS="$saved_LDFLAGS"
+    CPPFLAGS="$saved_CPPFLAGS"
+#    AS_IF(
+#      [test $lt_found = no],
+#      [AC_MSG_ERROR([libtcmalloc required. Get it from $LIBTCMALLOC_URL or specify its path using --with-libtcmalloc=/dir/])]
+#    )
+  ]
+)
+AS_IF(
+  [test $ac_cv_libtcmalloc_dir != "(system)"],
+  [
+    AS_IF(
+      [test -d "$ac_cv_libtcmalloc_dir/lib"],
+      [
+        LDFLAGS="-L$ac_cv_libtcmalloc_dir/lib $LDFLAGS"
+        lt_libdir="$ac_cv_libtcmalloc_dir/lib"
+      ],
+      [
+        LDFLAGS="-L$ac_cv_libtcmalloc_dir $LDFLAGS"
+        lt_libdir="$ac_cv_libtcmalloc_dir"
+      ]
+    )
+    AS_IF(
+      [test -d "$ac_cv_libtcmalloc_dir/include"],
+      [CPPFLAGS="-I$ac_cv_libtcmalloc_dir/include $CPPFLAGS"]
+      [CPPFLAGS="-I$ac_cv_libtcmalloc_dir $CPPFLAGS"]
+    )
+  ]
+)
+  
+  ]
+)  #end for AS_IF before Libtcmalloc detection
+
+AS_IF(
+  [test $lj_found = yes],
+  [
+    CFLAGS="$CFLAGS -DUSE_JEMALLOC"
+    LIBS="-ljemalloc $LIBS"
+  ],
+  [  
+    AS_IF(
+      [test $lj_found != yes -a $lt_found = yes],
+      [
+        CFLAGS="$CFLAGS -DUSE_TCMALLOC"
+        LIBS="-ltcmalloc $LIBS"
+      ]
+    )
+  ]
+)
+
 # Check whether to enable static linking
 AC_MSG_CHECKING([whether to enable static linking])
 AC_ARG_ENABLE([static],

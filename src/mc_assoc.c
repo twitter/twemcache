@@ -303,3 +303,21 @@ assoc_delete(const char *key, size_t nkey)
 
     nhash_item--;
 }
+
+size_t
+mc_get_heap_hashtable(void)
+{
+    size_t hh = 0;
+
+    if (primary_hashtable == NULL && old_hashtable == NULL) {
+        return hh;
+    }
+
+    if (expanding) {
+        hh = HASHSIZE(hash_power) + HASHSIZE(hash_power - 1); 
+    } else {
+        hh = HASHSIZE(hash_power);
+    }
+
+    return (size_t)(hh * sizeof(struct item_slh));
+}

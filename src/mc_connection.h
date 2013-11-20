@@ -169,4 +169,6 @@ void conn_set_state(struct conn *c, conn_state_t state);
 
 rstatus_t conn_set_event(struct conn *conn, struct event_base *base);
 
+size_t mc_get_heap_conn(void);
+
 #endif
