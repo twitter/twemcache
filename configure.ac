@@ -1,11 +1,11 @@
 # Define the package version numbers and the bug reporting address
 m4_define([MC_MAJOR], 2)
 m4_define([MC_MINOR], 6)
-m4_define([MC_PATCH], 0)
+m4_define([MC_PATCH], 2)
 m4_define([MC_BUGS], [cache-team@twitter.com])
 
 # Initialize autoconf
-AC_PREREQ([2.64])
+AC_PREREQ([2.63])
 AC_INIT([twemcache], [MC_MAJOR.MC_MINOR.MC_PATCH], [MC_BUGS])
 AC_CONFIG_SRCDIR([src/mc.c])
 AC_CONFIG_AUX_DIR([config])
@@ -25,6 +25,15 @@ AC_DEFINE(MC_VERSION_STRING, "MC_MAJOR.MC_MINOR.MC_PATCH", [Define the version s
 
 # Checks for language
 AC_LANG([C])
+
+# Checks for OS and set OS variables
+AC_CANONICAL_HOST
+case $host_os in
+    linux*)   OS_LINUX=yes ;;
+    darwin*)  OS_DARWIN=yes ;;
+    *)        AC_MSG_ERROR([Your platform is not currently supported]) ;;
+esac
+AM_CONDITIONAL([RDYNAMIC], [test x$OS_LINUX = xyes])
 
 # Checks for programs
 AC_PROG_CC
@@ -142,7 +151,7 @@ AS_IF(
 trylibeventdir=""
 AC_ARG_WITH([libevent],
   [AS_HELP_STRING([--with-libevent=@<:@path@:>@], [specify path to libevent install])],
-  [trylibeventdir=$withval], []
+  [trylibeventdir=$withval], [trylibeventdir=]
 )
 LIBEVENT_URL=http://libevent.org
 AC_CACHE_CHECK([for libevent directory], [ac_cv_libevent_dir],
@@ -249,6 +258,28 @@ AS_CASE([x$enable_static],
   [xno], [LIBS="-levent $LIBS"],
   [AC_MSG_FAILURE([invalid value ${enable_static} for --enable-static])])
 AC_MSG_RESULT([$enable_static])
+
+AC_MSG_CHECKING([whether to enable test coverage])
+AC_ARG_ENABLE([gcov],
+  [AS_HELP_STRING(
+    [--enable-gcov],
+    [enable coverage testing with gcov]),
+  ],
+  [],
+  [enable_gcov=no])
+AS_CASE([x$enable_gcov],
+  [xyes], [
+            AC_DEFINE([HAVE_GCOV], [1], [Define to 1 if gcov is enabled])
+            GCOV_CFLAGS="-O0 -fprofile-arcs -ftest-coverage"
+            GCOV_LDFLAGS="-lgcov"
+          ],
+  [xno],  [
+        GCOV_CFLAGS=""
+        GCOV_LDFLAGS=""
+   ])
+AC_MSG_RESULT([$enable_gcov])
+AC_SUBST(GCOV_CFLAGS)
+AC_SUBST(GCOV_LDFLAGS)
 
 # Define Makefiles
 AC_CONFIG_FILES([Makefile

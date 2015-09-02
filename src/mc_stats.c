@@ -48,7 +48,7 @@ extern pthread_mutex_t cache_lock;
 #define STATS_BUCKET_SIZE   32
 
 #define MAKEARRAY(_name, _type, _desc)  \
-    { .type = _type, .value = { .counter = 0LL }, .name = #_name },
+    { .type = _type, .value = { .gauge = {0LL, 0LL } }, .name = #_name },
 static struct stats_metric stats_tmetrics[] = {
     STATS_THREAD_METRICS(MAKEARRAY)
 };
@@ -57,6 +57,17 @@ static struct stats_metric stats_smetrics[] = {
     STATS_SLAB_METRICS(MAKEARRAY)
 };
 #undef MAKEARRAY
+
+/*
+ * currently for max we only deal with thread-level stats, as we haven't found
+ * use for slab level metrics yet.
+ */
+#define MAKEMAXARRAY(_name, _type, _desc)  \
+    { .type = STATS_MAX, .value = { .max = 0LL }, .name = #_name },
+static struct stats_metric stats_tmax[] = {
+    STATS_THREAD_METRICS(MAKEMAXARRAY)
+};
+#undef MAKEMAXARRAY
 
 static int num_updaters; /* # threads that update stats */
 
@@ -147,6 +158,10 @@ stats_metric_init(struct stats_metric *metric)
         metric->value.gauge.b = 0LL;
         break;
 
+    case STATS_MAX:
+        metric->value.max = 0LL;
+        break;
+
     default:
         NOT_REACHED();
     }
@@ -164,6 +179,12 @@ stats_template_init(void)
     for (i = 0; i < STATS_SLAB_LEN; ++i) {
         stats_metric_init(&stats_smetrics[i]);
     }
+
+    for (i = 0; i < STATS_THREAD_LEN; ++i) {
+        stats_metric_init(&stats_tmax[i]);
+    }
+
+    /* skipping slab level max for now */
 }
 
 void
@@ -296,6 +317,9 @@ stats_metric_val(struct stats_metric *metric)
         delta = metric->value.gauge.t - metric->value.gauge.b;
         return delta >= 0 ? delta : 0;
 
+    case STATS_MAX:
+        return metric->value.max;
+
     default:
         NOT_REACHED();
         return -1;
@@ -312,7 +336,9 @@ stats_metric_update(struct stats_metric *metric1,
 {
     ASSERT(metric1 != NULL);
     ASSERT(metric2 != NULL);
-    ASSERT(metric1->type == metric2->type);
+    ASSERT(metric1->type == metric2->type || metric1->type == STATS_MAX);
+
+    int64_t val;
 
     switch (metric1->type) {
     case STATS_COUNTER:
@@ -322,6 +348,12 @@ stats_metric_update(struct stats_metric *metric1,
     case STATS_GAUGE:
         metric1->value.gauge.t += metric2->value.gauge.t;
         metric1->value.gauge.b += metric2->value.gauge.b;
+
+    case STATS_MAX: /* MAX exists at the global level for gauges only */
+        val = metric2->value.gauge.t - metric2->value.gauge.b;
+        if (metric1->value.max < val) {
+            metric1->value.max = val;
+        }
         break;
 
     default:
@@ -464,7 +496,7 @@ _stats_aggregate(void)
 
     /* this is to reset connection related stats before aggregation */
     memcpy(aggregator.stats_thread, stats_tmetrics,
-           5 * sizeof(struct stats_metric));
+             STATS_THREAD_LEN * sizeof(struct stats_metric));
     for (cid = 0; cid <= SLABCLASS_MAX_ID; ++cid) { /* cid 0: aggregated */
         stats_slab_reset(aggregator.stats_slabs[cid]);
     }
@@ -504,6 +536,13 @@ _stats_aggregate(void)
     for (i = 0; i < num_updaters; ++i) {
         sem_post(&aggregator.stats_sem);
     }
+
+    /* update thread-level max */
+    for (j = 0; j < STATS_THREAD_LEN; ++j) {
+        stats_metric_update(&stats_tmax[j], &aggregator.stats_thread[j]);
+    }
+
+    /* skipping slab-level max for now */
 }
 
 /*
@@ -642,6 +681,7 @@ stats_default(struct conn *c)
     struct rusage usage;
     rel_time_t uptime;
     long int abstime;
+    char name[64];
 
     uptime = time_now();
     abstime = (long int)time_started() + time_now();
@@ -662,17 +702,27 @@ stats_default(struct conn *c)
                 usage.ru_utime.tv_usec);
     stats_print(c, "rusage_system", "%ld.%06ld", usage.ru_stime.tv_sec,
                 usage.ru_stime.tv_usec);
+    stats_print(c, "rusage_maxrss", "%ld", usage.ru_maxrss);
+    stats_print(c, "rusage_nvcsw", "%ld", usage.ru_nvcsw);
+    stats_print(c, "rusage_nivcsw", "%ld", usage.ru_nivcsw);
+    stats_print(c, "nbyte_primary", "%zu", nbyte_primary);
+    stats_print(c, "nbyte_old", "%zu", nbyte_old);
 
     sem_wait(&aggregator.stats_sem);
 
     /* thread-level metrics */
     for (i = 0; i < STATS_THREAD_LEN; ++i) {
         stats_print(c, thread[i].name, "%"PRId64, stats_metric_val(&thread[i]));
+        if (thread[i].type == STATS_GAUGE) {
+            mc_snprintf(name, 63, "%s_max", stats_tmax[i].name);
+            stats_print(c, name, "%"PRId64, stats_metric_val(&stats_tmax[i]));
+        }
     }
 
     /* slab-level metrics, summary */
     for (i = 0; i < STATS_SLAB_LEN; ++i) {
         stats_print(c, slab[i].name, "%"PRId64, stats_metric_val(&slab[i]));
+        /* skipping slab-level max */
     }
 
     sem_post(&aggregator.stats_sem);

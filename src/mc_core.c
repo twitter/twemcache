@@ -204,6 +204,7 @@ core_read_tcp(struct conn *c)
                 c->write_and_go = CONN_CLOSE;
                 return READ_MEMORY_ERROR;
             }
+            stats_thread_incr_by(mem_rbuf_curr, c->rsize);
             c->rcurr = c->rbuf = new_rbuf;
             c->rsize *= 2;
         }
@@ -230,6 +231,8 @@ core_read_tcp(struct conn *c)
         }
 
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            stats_thread_incr(read_eagain);
+
             log_debug(LOG_VERB, "recv on c %d not ready - eagain", c->sd);
             break;
         }
@@ -281,6 +284,7 @@ core_update(struct conn *c, int new_flags)
         return MC_OK;
     }
 
+    log_debug(LOG_VERB, "delete event %p", &c->event);
     status = event_del(&c->event);
     if (status < 0) {
         return MC_ERROR;
@@ -290,6 +294,7 @@ core_update(struct conn *c, int new_flags)
     event_base_set(base, &c->event);
     c->ev_flags = new_flags;
 
+    log_debug(LOG_VERB, "add event %p", &c->event);
     status = event_add(&c->event, 0);
     if (status < 0) {
         return MC_ERROR;
@@ -400,8 +405,12 @@ core_transmit(struct conn *c)
         }
 
         if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            stats_thread_incr(write_eagain);
+
             status = core_update(c, EV_WRITE | EV_PERSIST);
             if (status != MC_OK) {
+                stats_thread_incr(write_error);
+
                 log_error("update on c %d failed: %s", c->sd, strerror(errno));
                 conn_set_state(c, CONN_CLOSE);
                 return TRANSMIT_HARD_ERROR;
@@ -453,20 +462,28 @@ core_accept(struct conn *c)
         sd = accept(c->sd, NULL, NULL);
         if (sd < 0) {
             if (errno == EINTR) {
+                stats_thread_incr(accept_eintr);
+
                 log_debug(LOG_VERB, "accept on s %d not ready - eintr", c->sd);
                 continue;
             }
 
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                stats_thread_incr(accept_eagain);
+
                 log_debug(LOG_VERB, "accept on s %d not ready - eagain", c->sd);
                 return;
             }
 
             if (errno == EMFILE || errno == ENFILE) {
+                stats_thread_incr(accept_emfile);
+
                 log_debug(LOG_VERB, "accept on s %d not ready - emfile", c->sd);
                 core_accept_conns(false);
                 return;
             }
+
+            stats_thread_incr(accept_error);
 
             log_error("accept on s %d failed: %s", c->sd, strerror(errno));
             return;
@@ -612,8 +629,12 @@ core_drive_machine(struct conn *c)
             }
 
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                stats_thread_incr(read_eagain);
+
                 status = core_update(c, EV_READ | EV_PERSIST);
                 if (status != MC_OK) {
+                    stats_thread_incr(read_error);
+
                     log_error("update on c %d failed: %s", c->sd, strerror(errno));
                     conn_set_state(c, CONN_CLOSE);
                     break;
@@ -664,6 +685,8 @@ core_drive_machine(struct conn *c)
             }
 
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                stats_thread_incr(read_eagain);
+
                 status = core_update(c, EV_READ | EV_PERSIST);
                 if (status != MC_OK) {
                     log_error("update on c %d failed: %s", c->sd, strerror(errno));

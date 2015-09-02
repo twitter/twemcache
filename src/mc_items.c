@@ -647,7 +647,7 @@ _item_get(const char *key, size_t nkey)
     if (settings.oldest_live != 0 && settings.oldest_live <= time_now() &&
         it->atime <= settings.oldest_live) {
         _item_unlink(it);
-        stats_slab_incr(it->id, item_evict);
+        stats_slab_incr(it->id, item_expire);
         log_debug(LOG_VERB, "it '%.*s' nuked", nkey, key);
         return NULL;
     }

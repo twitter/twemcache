@@ -38,17 +38,17 @@
 #define UDP_BUFFER_SIZE      65536
 #define UDP_MAX_PAYLOAD_SIZE 1400
 
-#define TCP_BUFFER_SIZE      2048
+#define TCP_BUFFER_SIZE      1024
 
-#define RSIZE_HIGHWAT        8192
+#define RSIZE_HIGHWAT        4096
 
-#define ILIST_SIZE           200
-#define ILIST_HIGHWAT        400
+#define ILIST_SIZE           20
+#define ILIST_HIGHWAT        40
 
 #define SLIST_SIZE           20
 
-#define IOV_SIZE             400
-#define IOV_HIGHWAT          600
+#define IOV_SIZE             40
+#define IOV_HIGHWAT          60
 
 #define MSG_SIZE             10
 #define MSG_HIGHWAT          100

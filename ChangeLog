@@ -1,3 +1,17 @@
+2015-09-01  Cache Team <cache-team@twitter.com>
+	* twemcache: version 2.6.2 release
+	* Feature: adding "config maxbytes" command to adjust heap
+	* Feature: adding socket, memory, and context switch related stats
+	* Feature: adding max reporting for all gauges
+	* Fix: port signal handler patch from twemproxy
+	* Fix: update item_expire for flushed items
+	* Fix: updating settings.verbose when verbosity level changes
+	* Fix: adding long option form of -e
+	* Misc: changing default number of workers from 4 to 2
+	* Misc: downsizing default connection buffer
+	* Misc: lower ac requirements; making -rdynamic linux only
+	* Misc: added coverage support; COVERAGE.md for instructions
+
 2013-06-04  Cache Team <cache-team@twitter.com>
 	* twemcache: version 2.6.0 release
 	* Fix: memory leak in suffix, with contribution from @ferlatum & @skuzmich

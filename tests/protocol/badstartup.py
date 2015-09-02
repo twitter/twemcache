@@ -62,6 +62,7 @@ class ProtocolBadStartup(unittest.TestCase):
         self.server = startServer(args)
         time.sleep(SHUTDOWN_DELAY) # give the process enough time to finish up
         self.server.poll()
+        print self.server.returncode
         self.assertIsNotNone(self.server.returncode) #termination means error
 
     def test_badthread(self):

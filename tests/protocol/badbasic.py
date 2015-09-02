@@ -90,7 +90,8 @@ class ProtocolBadBasic(unittest.TestCase):
         key_len = 500
         key = 'a' * key_len
         server.send_cmd("get {0}\r\n".format(key)) # looooooong key
-        self.assertEqual("CLIENT_ERROR", server.expect("CLIENT_ERROR"))
+        err_string = "CLIENT_ERROR"
+        self.assertEqual(err_string, server.expect(err_string))
 
     def test_largevalue(self):
         '''Append/prepend grows item out of size range.'''

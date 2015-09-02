@@ -87,6 +87,7 @@ assoc_maintenance_thread(void *arg)
             if (expand_bucket == HASHSIZE(hash_power - 1)) {
                 expanding = 0;
                 mc_free(old_hashtable);
+                nbyte_old = 0;
             }
         }
 
@@ -186,6 +187,7 @@ assoc_init(void)
     if (primary_hashtable == NULL) {
         return MC_ENOMEM;
     }
+    nbyte_primary = hashtable_sz * sizeof(struct item_slh);
 
     pthread_cond_init(&maintenance_cond, NULL);
     run_maintenance_thread = 1;
@@ -243,11 +245,15 @@ assoc_expand(void)
     uint32_t hashtable_sz = HASHSIZE(hash_power + 1);
 
     old_hashtable = primary_hashtable;
+    nbyte_old = nbyte_primary;
     primary_hashtable = assoc_create_table(hashtable_sz);
     if (primary_hashtable == NULL) {
         primary_hashtable = old_hashtable;
+        old_hashtable = NULL;
+        nbyte_old = 0;
         return;
     }
+    nbyte_primary = hashtable_sz * sizeof(struct item_slh);
 
     log_debug(LOG_INFO, "expanding hash table with %"PRIu32" items to "
               "%"PRIu32" buckets of size %"PRIu32" bytes", nhash_item,

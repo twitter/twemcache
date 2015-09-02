@@ -85,7 +85,7 @@
 #define MC_KLOG_BACKUP      NULL
 #define MC_KLOG_BACKUP_SUF  ".old"
 
-#define MC_WORKERS          4
+#define MC_WORKERS          2
 #define MC_PID_FILE         NULL
 #define MC_USER             NULL
 
@@ -129,6 +129,7 @@ static struct option long_options[] = {
     { "klog-entry",           required_argument,  NULL,   'x' }, /* command logging entry number */
     { "klog-file",            required_argument,  NULL,   'X' }, /* command logging file */
     { "klog-sample-rate",     required_argument,  NULL,   'y' }, /* command logging sampling rate */
+    { "hash-power",           required_argument,  NULL,   'e' }, /* fixed sized hash table, as power of 2 */
     { "threads",              required_argument,  NULL,   't' }, /* # of threads */
     { "pidfile",              required_argument,  NULL,   'P' }, /* pid file */
     { "user",                 required_argument,  NULL,   'u' }, /* user identity to run as */

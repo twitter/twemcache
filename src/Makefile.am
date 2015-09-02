@@ -1,12 +1,19 @@
+MOSTLYCLEANFILES = *.gcov *.gcno *.gcda *.tcov
+
 bin_PROGRAMS = twemcache
 
-AM_CPPFLAGS = -D_GNU_SOURCE
+twemcache_CPPFLAGS = -D_GNU_SOURCE
 
-AM_CFLAGS = -Wall
-AM_CFLAGS += -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls
-AM_CFLAGS += -fno-strict-aliasing
+twemcache_CFLAGS =
+twemcache_CFLAGS += -Wall
+twemcache_CFLAGS += -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls
+twemcache_CFLAGS += -fno-strict-aliasing
+twemcache_CFLAGS += @GCOV_CFLAGS@
 
-LDFLAGS += -rdynamic
+twemcache_LDFLAGS = @GCOV_LDFLAGS@
+if RDYNAMIC
+twemcache_LDFLAGS += -rdynamic
+endif
 
 twemcache_SOURCES =			\
 	mc_core.c mc_core.h		\
