@@ -77,6 +77,9 @@ extern struct settings settings;
  * COMMAND   SUBCOMMAND  EVICT_COMMAND
  * config    evict       <num>\r\n
  *
+ * COMMAND   SUBCOMMAND  NEW_LIMIT
+ * config    maxbytes    <num>\r\n
+ *
  * COMMAND   SUBCOMMAND  KLOG_COMMAND  KLOG_SUBCOMMAND
  * config    klog        run           start\r\n
  * config    klog        run           stop\r\n
@@ -98,6 +101,7 @@ extern struct settings settings;
 #define TOKEN_CACHEDUMP_LIMIT   3
 #define TOKEN_AGGR_COMMAND      2
 #define TOKEN_EVICT_COMMAND     2
+#define TOKEN_MAXBYTES_COMMAND  2
 #define TOKEN_KLOG_COMMAND      2
 #define TOKEN_KLOG_SUBCOMMAND   3
 #define TOKEN_MAX               8
@@ -829,6 +833,7 @@ asc_create_suffix(struct conn *c, unsigned valid_key_iter, char **suffix)
         if (new_suffix_list == NULL) {
             return MC_ENOMEM;
         }
+        stats_thread_incr_by(mem_slist_curr, sizeof(char *) * c->ssize);
         c->ssize *= 2;
         c->slist  = new_suffix_list;
     }
@@ -992,6 +997,7 @@ asc_process_read(struct conn *c, struct token *token, int ntoken)
 
                     new_list = mc_realloc(c->ilist, sizeof(struct item *) * c->isize * 2);
                     if (new_list != NULL) {
+                        stats_thread_incr_by(mem_ilist_curr, sizeof(struct item *) * c->isize);
                         c->isize *= 2;
                         c->ilist = new_list;
                     } else {
@@ -1587,7 +1593,8 @@ asc_process_evict(struct conn *c, struct token *token, int ntoken)
     if (!mc_strtol(token[TOKEN_EVICT_COMMAND].val, &option)) {
         log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
                   "invalid option '%.*s'", c->sd, c->req_type,
-                  token[TOKEN_EVICT_COMMAND].len,token[TOKEN_EVICT_COMMAND].val);
+                  token[TOKEN_EVICT_COMMAND].len,
+                  token[TOKEN_EVICT_COMMAND].val);
 
         asc_rsp_client_error(c);
         return;
@@ -1606,6 +1613,42 @@ asc_process_evict(struct conn *c, struct token *token, int ntoken)
 }
 
 static void
+asc_process_maxbytes(struct conn *c, struct token *token, int ntoken)
+{
+    uint64_t option;
+
+    if (ntoken != 4) {
+        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
+                    "req of type %d with %d invalid tokens", c->sd,
+                    c->req_type, ntoken);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    if (!mc_strtoull(token[TOKEN_MAXBYTES_COMMAND].val, &option)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid option '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_MAXBYTES_COMMAND].len,
+                  token[TOKEN_MAXBYTES_COMMAND].val);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    if (option < SIZE_MAX && option >= settings.maxbytes) {
+        settings.maxbytes = (size_t)option;
+        asc_rsp_ok(c);
+        return;
+    }
+
+    log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+              "invalid option %"PRId64"", c->sd, c->req_type, option);
+
+    asc_rsp_client_error(c);
+}
+
+static void
 asc_process_config(struct conn *c, struct token *token, int ntoken)
 {
     struct token *t = &token[TOKEN_SUBCOMMAND];
@@ -1616,6 +1659,8 @@ asc_process_config(struct conn *c, struct token *token, int ntoken)
         asc_process_klog(c, token, ntoken);
     } else if (strncmp(t->val, "evict", t->len) == 0) {
         asc_process_evict(c, token, ntoken);
+    } else if (strncmp(t->val, "maxbytes", t->len) == 0) {
+        asc_process_maxbytes(c, token, ntoken);
     }
 }
 

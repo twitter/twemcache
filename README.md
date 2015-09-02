@@ -104,7 +104,7 @@ Eviction is triggered when a cache reaches full memory capacity. This happens wh
 * Slab LRA eviction (4) - choose the least recently accessed slab, and evict all items from it to reuse the slab.
 * Slab LRC eviction (8) - choose the least recently created slab, and evict all items from it to reuse the slab. Eviction ignores freeq & lruq to make sure the eviction follows the timestamp closely. Recommended if cache is updated on the write path.
 
-Eviction strategies can be *stacked*, in the order of higher to lower bit. For example, `-M 5` means that if slab LRU eviciton fails, Twemcache will try item LRU eviction.
+Eviction strategies can be *stacked*, in the order of higher to lower bit. For example, `-M 5` means that if slab LRA eviciton fails, Twemcache will try item LRU eviction.
 
 ## Observability
 

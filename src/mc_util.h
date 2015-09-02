@@ -185,6 +185,7 @@ bool mc_str2oct(const char *str, int32_t *out);
 #endif
 
 void mc_stacktrace(int skip_count);
+void mc_stacktrace_fd(int fd);
 void mc_assert(const char *cond, const char *file, int line, int panic);
 
 #define mc_strlen(_s)                   strlen((const char *)(_s))
@@ -195,6 +196,25 @@ void mc_assert(const char *cond, const char *file, int line, int panic);
 #define mc_snprintf(_s, _n, ...)        snprintf((char *)_s, _n, __VA_ARGS__)
 #define mc_scnprintf(_s, _n, ...)       _scnprintf((char *)_s, _n, __VA_ARGS__)
 #define mc_vscnprintf(_s, _n, _f, _a)   _vscnprintf((char*) _s, _n, _f, _a)
+
+/**
+  A (very) limited version of snprintf.
+  @param   to   Destination buffer.
+  @param   size    Size of destination buffer.
+  @param   fmt  printf() style format string.
+  @returns Number of bytes written, including terminating '\0'
+  Supports 'd' 'i' 'u' 'x' 'p' 's' conversion.
+  Supports 'l' and 'll' modifiers for integral types.
+  Does not support any width/precision.
+  Implemented with simplicity, and async-signal-safety in mind.
+*/
+int _safe_vsnprintf(char *to, size_t size, const char *fmt, va_list ap);
+int _safe_snprintf(char *to, size_t size, const char *fmt, ...);
+
+#define mc_safe_snprintf(_s, _n, ...)         \
+    _safe_snprintf((char *)(_s), (size_t)(_n), __VA_ARGS__)
+#define mc_safe_vsnprintf(_s, _n, _f, _a)     \
+    _safe_vsnprintf((char *)(_s), (size_t)(_n), _f, _a)
 
 int _scnprintf(char *buf, size_t size, const char *fmt, ...);
 int _vscnprintf(char *buf, size_t size, const char *fmt, va_list args);

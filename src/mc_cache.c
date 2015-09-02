@@ -72,6 +72,8 @@ cache_create(const char *name, size_t bufsize, size_t align)
     ret->name = name_new;
     ret->ptr = ptr;
     ret->freetotal = initial_pool_size;
+    /* we are only tracking memory usage for the variable part of the cache */
+    stats_thread_incr_by(mem_cache_curr, sizeof(char *) * ret->freetotal);
 
     ret->bufsize = bufsize;
 
@@ -94,9 +96,11 @@ cache_destroy(cache_t *cache)
     while (cache->freecurr > 0) {
         void *buf = cache->ptr[--cache->freecurr];
         mc_free(buf);
+        stats_thread_decr_by(mem_cache_curr, cache->bufsize);
     }
     mc_free(cache->name);
     mc_free(cache->ptr);
+    stats_thread_decr_by(mem_cache_curr, sizeof(char *) * cache->freetotal);
     pthread_mutex_destroy(&cache->mutex);
     mc_free(cache);
 }
@@ -118,6 +122,7 @@ cache_alloc(cache_t *cache)
         object = cache->ptr[--cache->freecurr];
     } else {
         object = mc_alloc(cache->bufsize);
+        stats_thread_incr_by(mem_cache_curr, cache->bufsize);
     }
     pthread_mutex_unlock(&cache->mutex);
 
@@ -145,12 +150,13 @@ cache_free(cache_t *cache, void *buf)
         size_t newtotal = cache->freetotal * 2;
         void **new_free = mc_realloc(cache->ptr, sizeof(char *) * newtotal);
         if (new_free != NULL) {
+            stats_thread_incr_by(mem_cache_curr, sizeof(char *) * cache->freetotal);
             cache->freetotal = newtotal;
             cache->ptr = new_free;
             cache->ptr[cache->freecurr++] = buf;
         } else {
             mc_free(buf);
-
+            stats_thread_decr_by(mem_cache_curr, cache->bufsize);
         }
     }
     pthread_mutex_unlock(&cache->mutex);

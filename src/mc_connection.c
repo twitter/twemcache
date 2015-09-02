@@ -100,29 +100,36 @@ conn_free(struct conn *c)
     }
 
     if (c->msg != NULL) {
+        stats_thread_decr_by(mem_msg_curr, sizeof(*c->msg) * c->msg_size);
         mc_free(c->msg);
     }
 
     if (c->rbuf != NULL) {
+        stats_thread_decr_by(mem_rbuf_curr, c->rsize);
         mc_free(c->rbuf);
     }
 
     if (c->wbuf != NULL) {
+        stats_thread_decr_by(mem_wbuf_curr, c->wsize);
         mc_free(c->wbuf);
     }
 
     if (c->ilist != NULL) {
+        stats_thread_decr_by(mem_ilist_curr, sizeof(*c->ilist) * c->isize);
         mc_free(c->ilist);
     }
 
     if (c->slist != NULL) {
+        stats_thread_decr_by(mem_slist_curr, sizeof(*c->slist) * c->ssize);
         mc_free(c->slist);
     }
 
     if (c->iov != NULL) {
+        stats_thread_decr_by(mem_iov_curr, sizeof(*c->iov) * c->iov_size);
         mc_free(c->iov);
     }
 
+    stats_thread_decr_by(mem_conn_curr, sizeof(*c));
     mc_free(c);
 }
 
@@ -131,11 +138,11 @@ conn_put(struct conn *c)
 {
     log_debug(LOG_VVERB, "put conn %p c %d", c, c->sd);
 
-    if (c->rsize > RSIZE_HIGHWAT) {
-        conn_free(c);
-        return;
-    }
+    /* Note(yao): disabling free_connq for now */
+    conn_free(c);
+    return;
 
+    /* Note(yao): this will not be executed */
     pthread_mutex_lock(&free_connq_mutex);
     nfree_connq++;
     STAILQ_INSERT_TAIL(&free_connq, c, c_tqe);
@@ -202,6 +209,14 @@ conn_get(int sd, conn_state_t state, int ev_flags, int rsize, int udp)
             conn_free(c);
             return NULL;
         }
+
+        stats_thread_incr_by(mem_conn_curr, sizeof(*c));
+        stats_thread_incr_by(mem_rbuf_curr, c->rsize);
+        stats_thread_incr_by(mem_wbuf_curr, c->wsize);
+        stats_thread_incr_by(mem_ilist_curr, sizeof(*c->ilist) * c->isize);
+        stats_thread_incr_by(mem_slist_curr, sizeof(*c->slist) * c->ssize);
+        stats_thread_incr_by(mem_iov_curr, sizeof(*c->iov) * c->iov_size);
+        stats_thread_incr_by(mem_msg_curr, sizeof(*c->msg) * c->msg_size);
 
         stats_thread_incr(conn_struct);
     }
@@ -279,6 +294,7 @@ conn_set_event(struct conn *c, struct event_base *base)
     event_set(&c->event, c->sd, c->ev_flags, core_event_handler, c);
     event_base_set(base, &c->event);
 
+    log_debug(LOG_VERB, "add event %p", &c->event);
     status = event_add(&c->event, 0);
     if (status < 0) {
         return MC_ERROR;
@@ -322,9 +338,10 @@ void
 conn_close(struct conn *c)
 {
     /* delete the event, the socket and the conn */
+    log_debug(LOG_VERB, "delete event %p", &c->event);
     event_del(&c->event);
 
-    log_debug(LOG_VVERB, "<%d connection closed", c->sd);
+    log_debug(LOG_VERB, "<%d connection closed", c->sd);
 
     close(c->sd);
     core_accept_conns(true);
@@ -361,46 +378,54 @@ conn_shrink(struct conn *c)
             memmove(c->rbuf, c->rcurr, (size_t)c->rbytes);
         }
 
+        stats_thread_decr_by(mem_rbuf_curr, c->rsize);
         newbuf = mc_realloc(c->rbuf, TCP_BUFFER_SIZE);
         if (newbuf != NULL) {
             c->rbuf = newbuf;
             c->rsize = TCP_BUFFER_SIZE;
         }
         /* TODO check other branch... */
+        stats_thread_incr_by(mem_rbuf_curr, c->rsize);
         c->rcurr = c->rbuf;
     }
 
     if (c->isize > ILIST_HIGHWAT) {
         struct item **newbuf;
 
+        stats_thread_decr_by(mem_ilist_curr, sizeof(*c->ilist) * c->isize);
         newbuf = mc_realloc(c->ilist, ILIST_SIZE * sizeof(c->ilist[0]));
         if (newbuf != NULL) {
             c->ilist = newbuf;
             c->isize = ILIST_SIZE;
         }
         /* TODO check error condition? */
+        stats_thread_incr_by(mem_ilist_curr, sizeof(*c->ilist) * c->isize);
     }
 
     if (c->msg_size > MSG_HIGHWAT) {
         struct msghdr *newbuf;
 
+        stats_thread_decr_by(mem_msg_curr, sizeof(*c->msg) * c->msg_size);
         newbuf = mc_realloc(c->msg, MSG_SIZE * sizeof(c->msg[0]));
         if (newbuf != NULL) {
             c->msg = newbuf;
             c->msg_size = MSG_SIZE;
         }
         /* TODO check error condition? */
+        stats_thread_incr_by(mem_msg_curr, sizeof(*c->msg) * c->msg_size);
     }
 
     if (c->iov_size > IOV_HIGHWAT) {
         struct iovec *newbuf;
 
+        stats_thread_decr_by(mem_iov_curr, sizeof(*c->iov) * c->iov_size);
         newbuf = mc_realloc(c->iov, IOV_SIZE * sizeof(c->iov[0]));
         if (newbuf != NULL) {
             c->iov = newbuf;
             c->iov_size = IOV_SIZE;
         }
         /* TODO check return value */
+        stats_thread_incr_by(mem_iov_curr, IOV_SIZE * sizeof(*c->iov));
     }
 }
 
@@ -443,6 +468,7 @@ conn_ensure_iov_space(struct conn *c)
         if (new_iov == NULL) {
             return MC_ENOMEM;
         }
+        stats_thread_incr_by(mem_iov_curr, c->iov_size * sizeof(*c->iov));
         c->iov = new_iov;
         c->iov_size *= 2;
 
@@ -540,6 +566,7 @@ conn_add_msghdr(struct conn *c)
         if (msg == NULL) {
             return MC_ENOMEM;
         }
+        stats_thread_incr_by(mem_msg_curr, c->msg_size * sizeof(*c->msg));
         c->msg = msg;
         c->msg_size *= 2;
     }

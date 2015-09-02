@@ -83,7 +83,22 @@
     ACTION( klog_logged,        STATS_COUNTER,      "# commands logged in buffer when klog is turned on")   \
     ACTION( klog_discarded,     STATS_COUNTER,      "# commands discarded when klog is turned on")          \
     ACTION( klog_skipped,       STATS_COUNTER,      "# commands skipped by sampling when klog is turned on")\
-
+    ACTION( accept_eagain,      STATS_COUNTER,      "# EAGAIN when calling accept()")                       \
+    ACTION( accept_eintr,       STATS_COUNTER,      "# EINTR when calling accept()")                        \
+    ACTION( accept_emfile,      STATS_COUNTER,      "# EMFILE when calling accept()")                       \
+    ACTION( accept_error,       STATS_COUNTER,      "# unhandled errors when calling accept()")             \
+    ACTION( read_eagain,        STATS_COUNTER,      "# EAGAIN on the socket read paths")                    \
+    ACTION( read_error,         STATS_COUNTER,      "# unhandled errors on the socket read paths")          \
+    ACTION( write_eagain,       STATS_COUNTER,      "# EAGAIN on the socket write paths")                   \
+    ACTION( write_error,        STATS_COUNTER,      "# unhandled errors on the socket write paths")         \
+    ACTION( mem_conn_curr,      STATS_GAUGE,        "# bytes used by struct conn")                          \
+    ACTION( mem_rbuf_curr,      STATS_GAUGE,        "# bytes used by conn rbuf")                            \
+    ACTION( mem_wbuf_curr,      STATS_GAUGE,        "# bytes used by conn wbuf")                            \
+    ACTION( mem_ilist_curr,     STATS_GAUGE,        "# bytes used by conn ilist")                           \
+    ACTION( mem_slist_curr,     STATS_GAUGE,        "# bytes used by conn slist")                           \
+    ACTION( mem_iov_curr,       STATS_GAUGE,        "# bytes used by conn iov")                             \
+    ACTION( mem_msg_curr,       STATS_GAUGE,        "# bytes used by conn msg")                             \
+    ACTION( mem_cache_curr,     STATS_GAUGE,        "# bytes used by object cache")                         \
 
 #define STATS_SLAB_METRICS(ACTION)                                                                          \
     ACTION( data_curr,          STATS_GAUGE,        "# current item bytes including overhead")              \
@@ -123,7 +138,8 @@
 typedef enum metric_type {
     STATS_INVALID,   /* invalid or uninitialized */
     STATS_COUNTER,   /* monotonic accumulator */
-    STATS_GAUGE      /* non-monotonic accumulator */
+    STATS_GAUGE,     /* non-monotonic accumulator */
+    STATS_MAX        /* max, monotonic */
 } metric_type_t;
 
 struct stats_metric {
@@ -135,6 +151,7 @@ struct stats_metric {
             int64_t t;          /* incr counter */
             int64_t b;          /* decr counter */
         } gauge;
+        int64_t max;            /* max, only applicable on aggregated gauge */
     } value;
 };
 

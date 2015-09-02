@@ -32,6 +32,9 @@
 
 #define HASH_MAX_POWER  32
 
+size_t nbyte_primary;
+size_t nbyte_old;
+
 rstatus_t assoc_init(void);
 void assoc_deinit(void);
 

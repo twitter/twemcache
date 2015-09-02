@@ -39,10 +39,15 @@ static struct signal signals[] = {
     { SIGTTOU, "SIGTTOU", 0,            signal_handler },
     { SIGHUP,  "SIGHUP",  0,            signal_handler },
     { SIGINT,  "SIGINT",  0,            signal_handler },
+    { SIGTERM, "SIGTERM", 0,            signal_handler },
     { SIGSEGV, "SIGSEGV", SA_RESETHAND, signal_handler },
     { SIGPIPE, "SIGPIPE", 0,            SIG_IGN },
     { 0,        NULL,     0,            NULL }
 };
+
+#ifdef HAVE_GCOV
+void __gcov_flush(void);
+#endif
 
 rstatus_t
 signal_init(void)
@@ -119,6 +124,7 @@ signal_handler(int signo)
         break;
 
     case SIGINT:
+    case SIGTERM:
         done = true;
         actionstr = ", exiting";
         break;
@@ -141,6 +147,9 @@ signal_handler(int signo)
     }
 
     if (done) {
+#ifdef HAVE_GCOV
+        __gcov_flush();
+#endif
         exit(1);
     }
 }

@@ -49,7 +49,7 @@ def startServer(args=None):
 def stopServer(server=None):
     '''shutdown twemcache'''
     if server != None:
-        server.kill()
+        server.terminate()
         time.sleep(SHUTDOWN_DELAY)
         print_verbose("Stopped twemcache instance, pid %d\n" % server.pid, VERBOSE)
 

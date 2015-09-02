@@ -91,9 +91,10 @@ CAS_LEN = 8 # cas adds another 8 bytes
 # global stats (returns of "stats" command)
 STATS_KEYS = [ # system/service info
     'pid', 'uptime', 'time', 'version', 'pointer_size', 'aggregate_ts',
-    'rusage_user', 'rusage_system',
+    'rusage_user', 'rusage_system', 'rusage_maxrss', 'rusage_nvcsw', 'rusage_nivcsw',
+    'nbyte_primary', 'nbyte_old',
      # connection related
-    'conn_disabled', 'conn_total', 'conn_struct', 'conn_yield', 'conn_curr',
+    'conn_disabled', 'conn_total', 'conn_struct', 'conn_yield', 'conn_curr', 'conn_curr_max',
      # item/slab related
     'item_curr', 'item_free', 'item_acquire', 'item_remove', 'item_link', 'item_unlink', 'item_evict', 'item_expire',
     'slab_req', 'slab_error', 'slab_alloc', 'slab_curr', 'slab_evict',
@@ -116,7 +117,14 @@ STATS_KEYS = [ # system/service info
     'cmd_total',
      # general errors
     'cmd_error', 'server_error',
-    'klog_logged', 'klog_discarded', 'klog_skipped'
+    'accept_eagain', 'accept_eintr', 'accept_emfile', 'accept_error',
+    'read_eagain', 'read_error', 'write_eagain', 'write_error',
+    'klog_logged', 'klog_discarded', 'klog_skipped',
+     # memory related
+    'mem_cache_curr', 'mem_conn_curr', 'mem_rbuf_curr', 'mem_wbuf_curr',
+    'mem_cache_curr_max', 'mem_conn_curr_max', 'mem_rbuf_curr_max', 'mem_wbuf_curr_max',
+    'mem_ilist_curr', 'mem_slist_curr', 'mem_iov_curr', 'mem_msg_curr',
+    'mem_ilist_curr_max', 'mem_slist_curr_max', 'mem_iov_curr_max', 'mem_msg_curr_max'
     ]
 SETTINGS_KEYS = [
     'prealloc', 'lock_page', 'accepting_conns', 'daemonize', 'max_corefile',
