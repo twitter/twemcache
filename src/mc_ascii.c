@@ -87,6 +87,14 @@ extern struct settings settings;
  * config    klog        interval      <val>\r\n
  * config    klog        sampling      reset\r\n
  * config    klog        sampling      <val>\r\n
+ *
+ * COMMAND   SUBCOMMAND  HK_COMMAND    HK_SUBCOMMAND
+ * config    hotkey      enable        yes\r\n
+ * config    hotkey      enable        no\r\n
+ * config    hotkey      redline       <val>\r\n
+ * config    hotkey      sample_rate   <val>\r\n
+ * config    hotkey      qps_threshold <val>\r\n
+ * config    hotkey      bw_threshold  <val>\r\n
  */
 
 #define TOKEN_COMMAND           0
@@ -102,6 +110,8 @@ extern struct settings settings;
 #define TOKEN_AGGR_COMMAND      2
 #define TOKEN_EVICT_COMMAND     2
 #define TOKEN_MAXBYTES_COMMAND  2
+#define TOKEN_HK_COMMAND        2
+#define TOKEN_HK_SUBCOMMAND     3
 #define TOKEN_KLOG_COMMAND      2
 #define TOKEN_KLOG_SUBCOMMAND   3
 #define TOKEN_MAX               8
@@ -893,11 +903,11 @@ asc_respond_get(struct conn *c, unsigned valid_key_iter, struct item *it,
     }
     if (return_cas) {
         sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32" %"PRIu64,
-                      it->dataflags, nbyte, item_get_cas(it));
+                it->dataflags, nbyte, item_get_cas(it));
         ASSERT(sz <= SUFFIX_SIZE + CAS_SUFFIX_SIZE);
      } else {
         sz = mc_snprintf(suffix, SUFFIX_MAX_LEN, " %"PRIu32" %"PRIu32,
-                      it->dataflags, nbyte);
+                it->dataflags, nbyte);
         ASSERT(sz <= SUFFIX_SIZE);
     }
     if (sz < 0) {
@@ -1122,6 +1132,14 @@ asc_process_update(struct conn *c, struct token *token, int ntoken)
         return;
     }
 
+    /**
+     * If hot key is enabled, we ignore any incoming flag value set by client.
+     * This flag will be used to send out signals like hotkey, backpressure etc.
+     */
+    if (__atomic_load_n(&settings.hotkey_enable, __ATOMIC_RELAXED)) {
+        flags = 0;
+    }
+
     it = item_alloc(id, key, nkey, flags, time_reltime(exptime), vlen);
     if (it == NULL) {
         log_warn("server error on c %d for req of type %d because of oom in "
@@ -1245,8 +1263,8 @@ asc_process_delta(struct conn *c, struct token *token, int ntoken)
         break;
 
     case DELTA_NON_NUMERIC:
-        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
-                  "non-numeric value", c->sd, c->req_type);
+        log_warn("client error on c %d for req of type %d and key '%.*s' with "
+                "non-numeric value", c->sd, c->req_type, nkey, key);
 
         rsplen = asc_rsp_client_error(c);
         klog_write(c->peer, c->req_type, c->req, c->req_len, res, rsplen);
@@ -1649,6 +1667,192 @@ asc_process_maxbytes(struct conn *c, struct token *token, int ntoken)
 }
 
 static void
+asc_process_hk_enable(struct conn *c, struct token *token, int ntoken)
+{
+    struct token *t;
+
+    t = &token[TOKEN_HK_SUBCOMMAND];
+    if (strncmp(t->val, "yes", t->len) == 0) {
+        if (__atomic_load_n(&hotkey_realloc, __ATOMIC_RELAXED)) {
+            log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
+                    "hotkey cannot be enabled when reallocating", c->sd,
+                    c->req_type);
+            asc_rsp_client_error(c);
+            return;
+        }
+        log_debug(LOG_NOTICE, "hotkey enabled at epoch %u", time_now());
+        __atomic_store_n(&settings.hotkey_enable, true, __ATOMIC_RELAXED);
+    } else if (strncmp(t->val, "no", t->len) == 0) {
+        log_debug(LOG_NOTICE, "hotkey disabled at epoch %u", time_now());
+        __atomic_store_n(&settings.hotkey_enable, false, __ATOMIC_RELAXED);
+    } else {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
+                "with invalid hotkey enable subcommand '%.*s'", c->sd,
+                      c->req_type, t->len, t->val);
+            asc_rsp_client_error(c);
+            return;
+    }
+
+    asc_rsp_ok(c);
+}
+
+static void
+asc_process_hk_redline(struct conn *c, struct token *token, int ntoken)
+{
+    uint32_t option;
+
+    if (__atomic_load_n(&settings.hotkey_enable, __ATOMIC_RELAXED)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
+                " redline qps can only be changed with hotkey disabled",
+                c->sd, c->req_type);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    if (!mc_strtoul(token[TOKEN_HK_SUBCOMMAND].val, &option)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid option '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_HK_SUBCOMMAND].len, token[TOKEN_HK_SUBCOMMAND].val);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    if (option > 0) {
+        if (hotkey_update_redline(option) != MC_OK) {
+            log_debug(LOG_ERR, "not enough memory to accommodate new "
+                    "hotkey redline qps setting!");
+            asc_rsp_client_error(c);
+            return;
+        }
+        asc_rsp_ok(c);
+        return;
+    }
+
+    log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+              "invalid option %"PRId32"", c->sd, c->req_type, option);
+
+    asc_rsp_client_error(c);
+}
+
+static void
+asc_process_hk_sample_rate(struct conn *c, struct token *token, int ntoken)
+{
+    uint32_t option;
+
+    if (__atomic_load_n(&settings.hotkey_enable, __ATOMIC_RELAXED)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d "
+                " sampling rate can only be changed with hotkey disabled",
+                c->sd, c->req_type);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    if (!mc_strtoul(token[TOKEN_HK_SUBCOMMAND].val, &option)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid option '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_HK_SUBCOMMAND].len, token[TOKEN_HK_SUBCOMMAND].val);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    if (option > 0) {
+        if (hotkey_update_sample_rate(option) != MC_OK) {
+            log_debug(LOG_ERR, "not enough memory to accommodate new "
+                    "hotkey sample rate!");
+            asc_rsp_client_error(c);
+            return;
+        }
+        asc_rsp_ok(c);
+        return;
+    }
+
+    log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+              "invalid option %"PRId32"", c->sd, c->req_type, option);
+
+    asc_rsp_client_error(c);
+}
+
+static void
+asc_process_hk_qps_threshold(struct conn *c, struct token *token, int ntoken)
+{
+    double option;
+
+    option = strtod(token[TOKEN_HK_SUBCOMMAND].val, NULL);
+
+    if (option > 0 && option <= 1) {
+        hotkey_update_qps_threshold(option);
+        asc_rsp_ok(c);
+        return;
+    }
+
+    log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+              "invalid option %"PRId32"", c->sd, c->req_type, option);
+
+    asc_rsp_client_error(c);
+}
+
+static void
+asc_process_hk_bw_threshold(struct conn *c, struct token *token, int ntoken)
+{
+    uint32_t option;
+
+    if (!mc_strtoul(token[TOKEN_HK_SUBCOMMAND].val, &option)) {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid option '%.*s'", c->sd, c->req_type,
+                  token[TOKEN_HK_SUBCOMMAND].len, token[TOKEN_HK_SUBCOMMAND].val);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    hotkey_update_bw_threshold(option);
+    asc_rsp_ok(c);
+}
+
+static void
+asc_process_hotkey(struct conn *c, struct token *token, int ntoken)
+{
+    struct token *t;
+
+    if (!asc_validate_ntoken(c, ntoken)) {
+        return;
+    }
+
+    if (ntoken != 5) {
+        log_hexdump(LOG_NOTICE, c->req, c->req_len, "client error on c %d for "
+                    "req of type %d with %d invalid tokens", c->sd,
+                    c->req_type, ntoken);
+
+        asc_rsp_client_error(c);
+        return;
+    }
+
+    t = &token[TOKEN_HK_COMMAND];
+
+    if (strncmp(t->val, "enable", t->len) == 0) {
+        asc_process_hk_enable(c, token, ntoken);
+    } else if (strncmp(t->val, "redline", t->len) == 0) {
+        asc_process_hk_redline(c, token, ntoken);
+    } else if (strncmp(t->val, "sample_rate", t->len) == 0) {
+        asc_process_hk_sample_rate(c, token, ntoken);
+    } else if (strncmp(t->val, "qps_threshold", t->len) == 0) {
+        asc_process_hk_qps_threshold(c, token, ntoken);
+    } else if (strncmp(t->val, "bw_threshold", t->len) == 0) {
+        asc_process_hk_bw_threshold(c, token, ntoken);
+    } else {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid hotkey subcommand '%.*s'", c->sd, c->req_type,
+                  t->len, t->val);
+
+        asc_rsp_client_error(c);
+    }
+}
+
+static void
 asc_process_config(struct conn *c, struct token *token, int ntoken)
 {
     struct token *t = &token[TOKEN_SUBCOMMAND];
@@ -1661,6 +1865,14 @@ asc_process_config(struct conn *c, struct token *token, int ntoken)
         asc_process_evict(c, token, ntoken);
     } else if (strncmp(t->val, "maxbytes", t->len) == 0) {
         asc_process_maxbytes(c, token, ntoken);
+    } else if (strncmp(t->val, "hotkey", t->len) == 0) {
+        asc_process_hotkey(c, token, ntoken);
+    } else {
+        log_debug(LOG_NOTICE, "client error on c %d for req of type %d with "
+                  "invalid config subcommand '%.*s'", c->sd, c->req_type,
+                  t->len, t->val);
+
+        asc_rsp_client_error(c);
     }
 }
 

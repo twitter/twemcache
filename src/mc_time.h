@@ -42,6 +42,7 @@ typedef unsigned int rel_time_t;
 
 void time_update(void);
 rel_time_t time_now(void);
+rel_time_t time_now_usec(void);
 time_t time_now_abs(void);
 time_t time_started(void);
 rel_time_t time_reltime(time_t exptime);

@@ -32,4 +32,8 @@ twemcache_SOURCES =			\
 	mc_queue.h			\
 	mc_cache.c mc_cache.h		\
 	mc_klog.c mc_klog.h		\
+	mc_hotkey.c mc_hotkey.h         \
+	mc_ring_array.c mc_ring_array.h \
+	mc_key_window.c mc_key_window.h \
+	mc_kc_map.c mc_kc_map.h	        \
 	mc.c

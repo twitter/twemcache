@@ -35,7 +35,13 @@ typedef enum item_flags {
     ITEM_CAS     = 2,  /* item has cas */
     ITEM_SLABBED = 4,  /* item in free q */
     ITEM_RALIGN  = 8,  /* item data (payload) is right-aligned */
+
 } item_flags_t;
+
+typedef enum item_control_flags {
+    ITEM_HOT_QPS = 1, /* item is a hot key based on get QPS */
+    ITEM_HOT_BW  = 2, /* item is a hot key based on bandwidth consumption */
+} item_control_flags_t;
 
 typedef enum item_set_result {
     SET_OK

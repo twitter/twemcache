@@ -33,7 +33,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#ifdef MC_BACKTRACE
 #include <execinfo.h>
+#endif
 #include <sys/types.h>
 
 #include <mc_core.h>

@@ -237,7 +237,7 @@ thread_setup(struct thread_worker *t)
               thread_libevent_process, t);
     event_base_set(t->base, &t->notify_event);
 
-    status = event_add(&t->notify_event, 0);
+    status = event_add(&t->notify_event, NULL);
     if (status < 0) {
         log_error("event add failed: %s", strerror(errno));
         return MC_ERROR;

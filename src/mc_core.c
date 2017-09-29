@@ -782,6 +782,8 @@ core_drive_machine(struct conn *c)
             break;
         }
     }
+
+    time_update();
 }
 
 void
@@ -1074,6 +1076,11 @@ core_init(void)
     stats_init();
 
     status = klog_init();
+    if (status != MC_OK) {
+        return status;
+    }
+
+    status = hotkey_init();
     if (status != MC_OK) {
         return status;
     }

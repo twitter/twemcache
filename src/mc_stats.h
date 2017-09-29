@@ -83,6 +83,9 @@
     ACTION( klog_logged,        STATS_COUNTER,      "# commands logged in buffer when klog is turned on")   \
     ACTION( klog_discarded,     STATS_COUNTER,      "# commands discarded when klog is turned on")          \
     ACTION( klog_skipped,       STATS_COUNTER,      "# commands skipped by sampling when klog is turned on")\
+    ACTION( hotkey_sampled,     STATS_COUNTER,      "# keys sampled for hotkey detection")                  \
+    ACTION( hotkey_qps,         STATS_COUNTER,      "# times qps based hotkey detected and signal given")   \
+    ACTION( hotkey_bw,          STATS_COUNTER,      "# times b/w based hotkey detected and signal given")   \
     ACTION( accept_eagain,      STATS_COUNTER,      "# EAGAIN when calling accept()")                       \
     ACTION( accept_eintr,       STATS_COUNTER,      "# EINTR when calling accept()")                        \
     ACTION( accept_emfile,      STATS_COUNTER,      "# EMFILE when calling accept()")                       \

@@ -669,6 +669,10 @@ item_get(const char *key, size_t nkey)
 
     pthread_mutex_lock(&cache_lock);
     it = _item_get(key, nkey);
+    if (__atomic_load_n(&settings.hotkey_enable, __ATOMIC_RELAXED) && it != NULL) {
+        it->dataflags &= ~(ITEM_HOT_QPS | ITEM_HOT_BW);
+        it->dataflags |= hotkey_sample(key, nkey, it->nbyte);
+    }
     pthread_mutex_unlock(&cache_lock);
 
     return it;

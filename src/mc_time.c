@@ -67,11 +67,23 @@ static time_t process_started;
  * So, now actually holds 32-bit seconds since the server start time.
  */
 static volatile rel_time_t now;
+static volatile rel_time_t now_usec;
 
 void
 time_update(void)
 {
-    int status;
+    rstatus_t status;
+
+#if defined OS_LINUX
+    struct timespec timer;
+
+    status = clock_gettime(CLOCK_REALTIME_COARSE, &timer);
+    if (status < 0) {
+        log_error("clock_gettime failed: %s", strerror(errno));
+    }
+    now = (rel_time_t)(timer.tv_sec - process_started);
+    now_usec = timer.tv_nsec / 1000;
+#else
     struct timeval timer;
 
     status = gettimeofday(&timer, NULL);
@@ -79,6 +91,8 @@ time_update(void)
         log_error("gettimeofday failed: %s", strerror(errno));
     }
     now = (rel_time_t) (timer.tv_sec - process_started);
+    now_usec = timer.tv_usec;
+#endif
 
     log_debug(LOG_PVERB, "time updated to %u", now);
 }
@@ -87,6 +101,12 @@ rel_time_t
 time_now(void)
 {
     return now;
+}
+
+rel_time_t
+time_now_usec(void)
+{
+    return now_usec;
 }
 
 time_t

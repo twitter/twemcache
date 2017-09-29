@@ -223,6 +223,10 @@ typedef enum rsp_type {
 #include <mc_signal.h>
 #include <mc_ascii.h>
 #include <mc_connection.h>
+#include <mc_hotkey.h>
+#include <mc_ring_array.h>
+#include <mc_key_window.h>
+#include <mc_kc_map.h>
 
 struct settings {
                                                   /* options with no argument */
@@ -279,6 +283,12 @@ struct settings {
 
     size_t          profile[SLABCLASS_MAX_IDS];   /* memory  : slab profile */
     uint8_t         profile_last_id;              /* memory  : last id in slab profile */
+
+    bool            hotkey_enable;                /* hotkey  : use hotkey detection? */
+    size_t          hotkey_redline_qps;           /* hotkey  : begin signalling at this QPS */
+    size_t          hotkey_sample_rate;           /* hotkey  : sampling ratio */
+    double          hotkey_qps_threshold;         /* hotkey  : theshold for hotkey signal (fraction) */
+    size_t          hotkey_bw_threshold;          /* hotkey  : bandwidth signalling threshold in bytes/s */
 };
 
 void core_write_and_free(struct conn *c, char *buf, int bytes);

@@ -29,8 +29,12 @@ AC_LANG([C])
 # Checks for OS and set OS variables
 AC_CANONICAL_HOST
 case $host_os in
-    linux*)   OS_LINUX=yes ;;
-    darwin*)  OS_DARWIN=yes ;;
+    linux*)   OS_LINUX=yes
+              AC_DEFINE([OS_LINUX], [1], [Define to 1 if OS has Linux kernel])
+              ;;
+    darwin*)  OS_DARWIN=yes
+              AC_DEFINE([OS_DARWIN], [1], [Define to 1 if OS has Darwin kernel])
+              ;;
     *)        AC_MSG_ERROR([Your platform is not currently supported]) ;;
 esac
 AM_CONDITIONAL([RDYNAMIC], [test x$OS_LINUX = xyes])

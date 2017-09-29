@@ -123,12 +123,17 @@ static struct option long_options[] = {
     { "disable-cas",          no_argument,        NULL,   'C' }, /* disable cas */
     { "describe-stats",       no_argument,        NULL,   'D' }, /* print stats description and exit */
     { "show-sizes",           no_argument,        NULL,   'S' }, /* print slab & item struct sizes and exit */
+    { "enable-hotkey",        no_argument,        NULL,   'H' }, /* enable hotkey detection */
     { "output",               required_argument,  NULL,   'o' }, /* output logfile */
     { "verbosity",            required_argument,  NULL,   'v' }, /* log verbosity level */
     { "stats-aggr-interval",  required_argument,  NULL,   'A' }, /* stats aggregation interval in usec */
     { "klog-entry",           required_argument,  NULL,   'x' }, /* command logging entry number */
     { "klog-file",            required_argument,  NULL,   'X' }, /* command logging file */
     { "klog-sample-rate",     required_argument,  NULL,   'y' }, /* command logging sampling rate */
+    { "hotkey-redline-qps",   required_argument,  NULL,   'q' }, /* hotkey signalling begins at this qps */
+    { "hotkey-sample-rate",   required_argument,  NULL,   'Y' }, /* hotkey sampling rate */
+    { "hotkey-qps-threshold", required_argument,  NULL,   'T' }, /* hotkey frequency signalling threshold */
+    { "hotkey-bw-threshold",  required_argument,  NULL,   'j' }, /* hotkey bandwidth signalling threshold */
     { "hash-power",           required_argument,  NULL,   'e' }, /* fixed sized hash table, as power of 2 */
     { "threads",              required_argument,  NULL,   't' }, /* # of threads */
     { "pidfile",              required_argument,  NULL,   'P' }, /* pid file */
@@ -161,6 +166,7 @@ static char short_options[] =
     "C"  /* disable cas */
     "D"  /* print stats description and exit */
     "S"  /* print slab & item struct sizes and exit */
+    "H"  /* enable hotkey detection */
     "o:" /* output logfile */
     "v:" /* log verbosity level */
     "A:" /* stats aggregation interval in msec */
@@ -171,6 +177,11 @@ static char short_options[] =
     "x:" /* command logging entry number */
     "X:" /* command logging file */
     "y:" /* command logging sample rate */
+    "q:" /* hotkey signalling begins at this qps */
+    "Y:" /* hotkey sampling rate */
+    "T:" /* hotkey frequency signalling threshold */
+    "j:" /* hotkey bandwidth signalling threshold */
+    "B:" /* hotkey min key/val bandwidth signalling */
     "R:" /* max request per event */
     "c:" /* max simultaneous connections */
     "b:" /* tcp backlog queue limit */
@@ -192,13 +203,14 @@ mc_show_usage(void)
 {
     log_stderr(
         "Usage:" CRLF
-        "twemcache [-?hVCELdkrDS]" CRLF
+        "twemcache [-?hVCELdkrDSH]" CRLF
         "          [-o output file] [-v verbosity level]" CRLF
         "          [-A stats aggr interval] [-t threads] [-P pid file] [-u user]" CRLF
         "          [-e hash power] [-M eviction strategy]" CRLF
         "          [-x command log entry] [-X command log file] [-y command log sample rate]" CRLF
-        "          [-p port] [-U udp port] [-R max requests] [-c max conns] [-b backlog]" CRLF
-        "          [-l interface] [-s unix path] [-a access mask]" CRLF
+        "          [-q hotkey redline qps] [-Y hotkey sample rate] [-T hotkey qps threshold]" CRLF
+        "          [-B hotkey bandwidth threshold] [-p port] [-U udp port] [-R max requests]" CRLF
+        "          [-c max conns] [-b backlog] [-l interface] [-s unix path] [-a access mask]" CRLF
         "          [-m max memory] [-f factor] [-n min item chunk size] [-I slab size]" CRLF
         "          [-z slab profile]"
         "");
@@ -216,7 +228,8 @@ mc_show_usage(void)
         "  -D, --describe-stats        show version, name and description of each stats" CRLF
         "                              metric, and exit" CRLF
         "  -S, --show-sizes            show version, item overhead, minimum item size," CRLF
-        "                              slab overhead, default slab size, and exit"
+        "                              slab overhead, default slab size, and exit" CRLF
+        "  -H, --enable-hotkey         enable signalling of hotkey"
         "");
 
     log_stderr(
@@ -250,6 +263,22 @@ mc_show_usage(void)
         MC_KLOG_FILE != NULL ? MC_KLOG_FILE : "disabled",
         MC_KLOG_SMP_RATE
         );
+
+    log_stderr(
+        "  -q, --hotkey-redline-qps=N   begin signalling if observed qps >= N (default: %d)" CRLF
+        "  -Y, --hotkey-sample-rate=N   sample one in every N gets for hotkey detection" CRLF
+        "                               (default: %d)" CRLF
+        "  -T, --hotkey-qps-threshold=N signal hotkey if >N of the keys in the window" CRLF
+        "                               are the key being sampled (default: %f)"
+        "  -j, --hotkey-bw-threshold=N  signal hotkey if the bandwidth of the sampled key >=" CRLF
+        "                               N (default: %d)"
+        "",
+        HOTKEY_REDLINE_QPS,
+        HOTKEY_SAMPLE_RATE,
+        HOTKEY_QPS_THRESHOLD,
+        HOTKEY_BW_THRESHOLD
+        );
+
 
     log_stderr(
         "  -R, --max-requests=N        set the maximum number of requests per event" CRLF
@@ -551,6 +580,12 @@ mc_set_default_options(void)
     settings.pid_filename = MC_PID_FILE;
     settings.pid_file = 0;
 
+    settings.hotkey_enable = false;
+    settings.hotkey_redline_qps = HOTKEY_REDLINE_QPS;
+    settings.hotkey_sample_rate = HOTKEY_SAMPLE_RATE;
+    settings.hotkey_qps_threshold = HOTKEY_QPS_THRESHOLD;
+    settings.hotkey_bw_threshold = HOTKEY_BW_THRESHOLD;
+
     memset(settings.profile, 0, sizeof(settings.profile));
     settings.profile_last_id = SLABCLASS_MAX_ID;
 }
@@ -560,6 +595,7 @@ mc_get_options(int argc, char **argv)
 {
     int c, value, factor;
     size_t len;
+    double float_value;
     bool tcp_specified, udp_specified;
 
     tcp_specified = false;
@@ -618,6 +654,10 @@ mc_get_options(int argc, char **argv)
         case 'S':
             show_sizes = 1;
             show_version = 1;
+            break;
+
+        case 'H':
+            settings.hotkey_enable = true;
             break;
 
         case 'o':
@@ -703,6 +743,42 @@ mc_get_options(int argc, char **argv)
                 return MC_ERROR;
             }
             settings.klog_sampling_rate = value;
+            break;
+
+        case 'q':
+            value = mc_atoi(optarg, strlen(optarg));
+            if (value < 0) {
+                log_stderr("twemcache: option -w requres a non negative number");
+                return MC_ERROR;
+            }
+            settings.hotkey_redline_qps = value;
+            break;
+
+        case 'Y':
+            value = mc_atoi(optarg, strlen(optarg));
+            if (value <= 0) {
+                log_stderr("twemcache: option -Y requires a positive number");
+                return MC_ERROR;
+            }
+            settings.hotkey_sample_rate = value;
+            break;
+
+        case 'T':
+            float_value = strtod(optarg, NULL);
+            if (float_value <= 0 || float_value > 1) {
+                log_stderr("twemcache: option -T requires a number between 0 and 1");
+                return MC_ERROR;
+            }
+            settings.hotkey_qps_threshold = float_value;
+            break;
+
+        case 'j':
+            value = mc_atoi(optarg, strlen(optarg));
+            if (value <= 0) {
+                log_stderr("twemcache: option -B requires a positive number");
+                return MC_ERROR;
+            }
+            settings.hotkey_bw_threshold = value;
             break;
 
         case 't':
