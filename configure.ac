@@ -157,7 +157,7 @@ AC_ARG_WITH([libevent],
   [AS_HELP_STRING([--with-libevent=@<:@path@:>@], [specify path to libevent install])],
   [trylibeventdir=$withval], [trylibeventdir=]
 )
-LIBEVENT_URL=http://libevent.org
+LIBEVENT_URL=https://libevent.org
 AC_CACHE_CHECK([for libevent directory], [ac_cv_libevent_dir],
   [
     saved_LIBS="$LIBS"
