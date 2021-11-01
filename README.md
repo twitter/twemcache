@@ -1,4 +1,9 @@
-# Twemcache: Twitter Memcached [![Build Status](https://secure.travis-ci.org/twitter/twemcache.png)](http://travis-ci.org/twitter/twemcache)
+# Twemcache: Twitter Memcached 
+
+[![status: retired](https://opensource.twitter.dev/status/retired.svg)](https://opensource.twitter.dev/status/#retired)
+[![Build Status](https://secure.travis-ci.org/twitter/twemcache.png)](http://travis-ci.org/twitter/twemcache)
+
+Twemcache is no longer actively maintained.  See [twitter/pelikan](https://github.com/twitter/pelikan) for our latest caching work.
 
 Twemcache (pronounced "tw-em-cache") is the Twitter Memcached. Twemcache is based on a fork of [Memcached](http://memcached.org/) v.1.4.4 that has been heavily modified to make to suitable for the large scale production environment at Twitter.
 
