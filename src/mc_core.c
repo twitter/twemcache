@@ -459,7 +459,11 @@ core_accept(struct conn *c)
     ASSERT(c->state == CONN_LISTEN);
 
     for (;;) {
+#if (HAVE_ACCEPT4)
+        sd = accept4(c->sd, NULL, NULL, SOCK_NONBLOCK);
+#else
         sd = accept(c->sd, NULL, NULL);
+#endif 
         if (sd < 0) {
             if (errno == EINTR) {
                 stats_thread_incr(accept_eintr);
@@ -492,6 +496,7 @@ core_accept(struct conn *c)
         break;
     }
 
+#if !(HAVE_ACCEPT4)
     status = mc_set_nonblocking(sd);
     if (status != MC_OK) {
         log_error("set nonblock on c %d from s %d failed: %s", sd, c->sd,
@@ -499,6 +504,7 @@ core_accept(struct conn *c)
         close(sd);
         return;
     }
+#endif
 
     status = mc_set_keepalive(sd);
     if (status != MC_OK) {
