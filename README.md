@@ -97,7 +97,7 @@ To build twemcache from source with _debug logs enabled_ and _assertions disable
 
 ## Slabs and Items
 
-Memory in twemcache is organized into fixed sized slabs whose size is configured using the -I or --slab-size=N command-line argument. Every slab is carved into a collection of contiguous, equal size items. All slabs that are carved into items of a given size belong to a given slabclass. The number of slabclasses and the size of items they serve can be configured either from a geometric sequence with the inital item size set using -n or --min-item-chunk-size=N argument and growth ratio set using -f or --factor=D argument, or from a profile string set using -z or --slab-profile=S argument.
+Memory in twemcache is organized into fixed sized slabs whose size is configured using the -I or --slab-size=N command-line argument. Every slab is carved into a collection of contiguous, equal size items. All slabs that are carved into items of a given size belong to a given slabclass. The number of slabclasses and the size of items they serve can be configured either from a geometric sequence with the initial item size set using -n or --min-item-chunk-size=N argument and growth ratio set using -f or --factor=D argument, or from a profile string set using -z or --slab-profile=S argument.
 
 ## Eviction
 
